@@ -5,6 +5,7 @@ import { Connect2ICProvider } from "@connect2ic/react"
 import "@connect2ic/core/style.css"
 import * as dao from "../.dfx/local/canisters/dao"
 import {DaoName} from "./components/DaoName"
+import "./index.css"
 
 function App() {
 
