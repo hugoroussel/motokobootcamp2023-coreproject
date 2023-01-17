@@ -11,6 +11,10 @@
       ],
       "type": "motoko"
     },
+    "mbt": {
+      "main": "canisters/mbt/main.mo",
+      "type": "motoko"
+    },
     "assets": {
       "dependencies": [
         "dao"
