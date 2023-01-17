@@ -4,6 +4,13 @@
       "main": "canisters/dao/main.mo",
       "type": "motoko"
     },
+    "webpage": {
+      "main": "canisters/webpage/main.mo",
+      "dependencies": [
+        "dao"
+      ],
+      "type": "motoko"
+    },
     "assets": {
       "dependencies": [
         "dao"
@@ -19,7 +26,7 @@
   },
   "defaults": {
     "build": {
-      "packtool": ""
+      "packtool": "vessel sources"
     }
   },
   "networks": {

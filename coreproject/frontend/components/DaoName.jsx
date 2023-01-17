@@ -21,7 +21,7 @@ const DaoName = () => {
   }, [daoName])
 
   return (
-    <div className="hover:bg-sky-700">
+    <div className="">
       <p style={{ fontSize: "2.5em" }}>{daoName}</p>
     </div>
   )
