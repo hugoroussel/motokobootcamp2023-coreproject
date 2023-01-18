@@ -264,22 +264,39 @@ shared ({ caller = initializer }) actor class Ledger() = this {
 
     let now = Nat64.fromNat(Int.abs(Time.now()));
     let log = Buffer.Buffer<Transaction>(100);
+
+    let myAccount : Account = {owner = Principal.fromText("qdaue-mb5vz-iszz7-w5r7p-o6t2d-fit3j-rwvzx-77nt4-jmqj7-z27oa-2ae"); subaccount = ?defaultSubaccount};
     
     // validateSubaccount(account.subaccount);
     let tx : Transaction = {
-    operation = #Mint({
-        spender = minting_account.owner;
-        source = #Init;
-        from = minting_account;
-        to = minting_account;
-        amount = 10000000000000000;
-        fee = null;
-        memo = null;
-        created_at_time = ?now;
-    });
-    fee = 0;
-    timestamp = now;
+      operation = #Mint({
+          spender = minting_account.owner;
+          source = #Init;
+          from = minting_account;
+          to = minting_account;
+          amount = 10000000000000000;
+          fee = null;
+          memo = null;
+          created_at_time = ?now;
+      });
+      fee = 0;
+      timestamp = now;
     };
+    let tx1 : Transaction = {
+      operation = #Mint({
+          spender = myAccount.owner;
+          source = #Init;
+          from = myAccount;
+          to = myAccount;
+          amount = 10000000000000000;
+          fee = null;
+          memo = null;
+          created_at_time = ?now;
+      });
+      fee = 0;
+      timestamp = now;
+    };
+    log.add(tx1);
     log.add(tx);
     log;
     };

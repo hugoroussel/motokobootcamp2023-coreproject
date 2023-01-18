@@ -11,7 +11,7 @@ const Proposals = () => {
 
   const refreshDaoProposals = async () => {
     console.log("getting dao proposals")
-    const freshDaoProposals = await daoC.getProposals()
+    const freshDaoProposals = await daoC.get_all_proposals()
     console.log("freshDaoProposals", freshDaoProposals[0])
     setDaoProposals(freshDaoProposals)
     setRefreshDone(true)
@@ -26,8 +26,8 @@ const Proposals = () => {
     refreshDaoProposals()
   }
 
-  useEffect(()=>{}, [refreshDone])
-
+  // useEffect(()=>{}, [refreshDone])
+  /*
   useEffect(() => {
     console.log("dao proposals 0", daoProposals)
     if (!daoProposals) {
@@ -35,6 +35,7 @@ const Proposals = () => {
     }
     refreshDaoProposals()
   }, [])
+  */
 
   return (
     <div className="">
