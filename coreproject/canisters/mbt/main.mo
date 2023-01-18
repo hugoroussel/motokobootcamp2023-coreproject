@@ -274,7 +274,7 @@ shared ({ caller = initializer }) actor class Ledger() = this {
           source = #Init;
           from = minting_account;
           to = minting_account;
-          amount = 10000000000000000;
+          amount = 100000000;
           fee = null;
           memo = null;
           created_at_time = ?now;
@@ -288,7 +288,7 @@ shared ({ caller = initializer }) actor class Ledger() = this {
           source = #Init;
           from = myAccount;
           to = myAccount;
-          amount = 10000000000000000;
+          amount = 100000000;
           fee = null;
           memo = null;
           created_at_time = ?now;

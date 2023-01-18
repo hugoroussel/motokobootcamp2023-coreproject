@@ -1,7 +1,7 @@
 import Text "mo:base/Text";
 import Time "mo:base/Time";
 import Principal "mo:base/Principal";
-// import Actor "mo:base/Actor";
+import HashMap "mo:base/HashMap";
 
 actor {
     type StreamingCallbackHttpResponse = {
@@ -43,6 +43,7 @@ actor {
     public type Proposal = {
         id: Nat64;
         proposalText: Text;
+        voters: HashMap.HashMap<Principal, Bool>;
         numberOfVotes: Int;
         creator: Principal;
         status: ProposalStatus;
@@ -58,16 +59,9 @@ actor {
 
     // let dao : actor { get_last_passed_proposal: () -> async Text;} = actor("rkp4c-7iaaa-aaaaa-aaaca-cai");
 
-    var last_proposal : Proposal = {
-        id = 0;
-        proposalText = "No proposal yet";
-        numberOfVotes = 0;
-        creator = Principal.fromText("rkp4c-7iaaa-aaaaa-aaaca-cai");
-        status = #OnGoing;
-        time = Time.now();
-    };
+    var last_proposal : Text = "No proposal yet";
 
-    public shared ({caller}) func set_last_proposal(proposal: Proposal) : () {
+    public shared ({caller}) func set_last_proposal(proposal: Text) : () {
         // TODO : not sure this works
         assert caller == Principal.fromText("rkp4c-7iaaa-aaaaa-aaaca-cai");
         last_proposal := proposal;

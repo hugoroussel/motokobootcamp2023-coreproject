@@ -9,6 +9,7 @@ import {Proposals} from "./components/Proposals"
 import "./index.css"
 import {Navbar} from "./components/Navbar"
 
+
 function App() {
   return (
     <div className="bg-white">
@@ -16,11 +17,17 @@ function App() {
       <div className="mx-auto max-w-7xl py-16 px-6 sm:py-24 lg:px-8">
         <div className="text-center">
           <p className="mt-1 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
-            Simple DAO
+          [ˈVƆDA]
+          </p>
+          <p className="mx-auto mt-5 max-w-xl text-md text-gray-500">
+            water in slavic
           </p>
           <p className="mx-auto mt-5 max-w-xl text-xl text-gray-500">
-            Easy DAO creation and management.
+            Liquid Democracy for the Internet Computer
           </p>
+          <br/>
+          <br/>
+          <br/>
           <Proposals/>
         </div>
       </div>

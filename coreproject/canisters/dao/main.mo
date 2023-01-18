@@ -10,6 +10,7 @@ import Blob "mo:base/Blob";
 import Nat64 "mo:base/Nat64";
 import Time "mo:base/Time";
 import Int "mo:base/Int";
+import Debug "mo:base/Debug";
 
 
 actor {
@@ -20,7 +21,9 @@ actor {
     let mbt : actor { icrc1_balance_of: (Account) -> async Nat;} = actor("renrk-eyaaa-aaaaa-aaada-cai");
     let webpage : actor { set_last_proposal: (Proposal) -> async ();} = actor("rno2w-sqaaa-aaaaa-aaacq-cai");
 
-    var daoName: Text = "ActorDao";
+    var daoName: Text = "VodaDao";
+    var thresholdAcceptance: Int = 100;
+    var thresholdRejection: Int = -100;
 
     type ProposalStatus = {
         #OnGoing;
@@ -34,7 +37,7 @@ actor {
         numberOfVotes: Int;
         creator: Principal;
         status: ProposalStatus;
-        time: Time.Time;
+        time: Int;
     };
 
     func nat64Hash(n : Nat64) : Hash.Hash { 
@@ -43,15 +46,17 @@ actor {
     var id : Nat64 = 0;
     var proposals = HashMap.HashMap<Nat64, Proposal>(0, Nat64.equal, nat64Hash);
 
+    var emptyHashMap = HashMap.HashMap<Principal, Bool>(0, Principal.equal, Principal.hash);
+
     // Initialized for debugging purposes
     var last_passed_proposal : Proposal = {id=0; proposalText = "Initial Proposal"; numberOfVotes = 0; creator = Principal.fromText("qdaue-mb5vz-iszz7-w5r7p-o6t2d-fit3j-rwvzx-77nt4-jmqj7-z27oa-2ae"); status = #OnGoing; time = Time.now()};
-
 
     public shared ({caller}) func submit_proposal(proposalText : Text) : async Bool {
         // Checks
         assert await _checks(caller);
+        let time = Time.now();
         // check if the proposal is not already in the DAO
-        let proposal = {id=id; proposalText = proposalText; numberOfVotes = 0; creator = caller; status = #OnGoing; time = Time.now()};
+        let proposal = {id=id; proposalText = proposalText; numberOfVotes = 0; creator = caller; status = #OnGoing; time = time};
         proposals.put(id, proposal);
         id += 1;
         return true;
@@ -75,26 +80,26 @@ actor {
                     return false;
                 };
                 if (upvote){
-                    newNumberOfVotes := balance+proposal.numberOfVotes;
+                    newNumberOfVotes := proposal.numberOfVotes+balance;
                 } else {
                     newNumberOfVotes := proposal.numberOfVotes-balance;
                 };
-                if(newNumberOfVotes>=100){
+                Debug.print(Int.toText(newNumberOfVotes));
+                if(newNumberOfVotes>=thresholdAcceptance){
                     var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
                     last_passed_proposal := updatedProposal;
                     await webpage.set_last_proposal(last_passed_proposal);
                     proposals.put(proposal.id, updatedProposal);
-                } else if (newNumberOfVotes<=-100){
+                } else if (newNumberOfVotes<=thresholdRejection){
                     var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
                     proposals.put(proposal.id, updatedProposal);
                 } else {
-                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
+                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
                     proposals.put(proposal.id, updatedProposal);
                 };
                 return true;
             };
-        };
-        
+        };   
     };
 
     // Getters
@@ -130,7 +135,8 @@ actor {
     public func _getBalance(caller : Text) : async Nat {
         let principal = Principal.fromText(caller);
         let account = { owner = principal; subaccount = null };
-        let res = await mbt.icrc1_balance_of(account);
+        var res = await mbt.icrc1_balance_of(account);
+        res := res/100000000;
         return res;
     };
 

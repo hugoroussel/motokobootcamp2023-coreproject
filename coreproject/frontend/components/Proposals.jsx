@@ -1,5 +1,6 @@
 import { useCanister } from "@connect2ic/react"
 import React, { useEffect, useState } from "react"
+import { BeakerIcon, ArrowCircleDownIcon, ArrowCircleUpIcon } from '@heroicons/react/solid'
 
 const Proposals = () => {
   /*
@@ -7,27 +8,71 @@ const Proposals = () => {
   */
   const [daoC] = useCanister("dao")
   const [daoProposals, setDaoProposals] = useState([])
+  const [daoOngoingProposals, setDaoOngoingProposals] = useState([])
+  const [daoRejectedProposals, setDaoRejectedProposals] = useState([])
+  const [daoAcceptedProposals, setDaoAcceptedProposals] = useState([])
   const [refreshDone, setRefreshDone] = useState(false)
 
+  const [showRejected, setShowRejected] = useState(false);
+  const [showAccepted, setShowAccepted] = useState(false);
+  const [showOngoing, setShowOngoing] = useState(true);
+
+  function toggleModal(showText){
+    if(showText === "rejected"){
+      setShowRejected(true)
+      setShowAccepted(false)
+      setShowOngoing(false)
+    } else if(showText === "accepted"){
+      setShowRejected(false)
+      setShowAccepted(true)
+      setShowOngoing(false)
+    }
+    else if(showText === "ongoing"){
+      setShowRejected(false)
+      setShowAccepted(false)
+      setShowOngoing(true)
+    }
+  }
+
   const refreshDaoProposals = async () => {
-    console.log("getting dao proposals")
     const freshDaoProposals = await daoC.get_all_proposals()
-    console.log("freshDaoProposals", freshDaoProposals[0])
+    console.log("getting dao proposals", freshDaoProposals)
+    let freshA = []
+    let freshR = []
+    let freshO = []
+    for(let i = 0; i < freshDaoProposals.length; i++) {
+      if(Object.keys(freshDaoProposals[i].status)[0] === "OnGoing"){
+        freshO.push(freshDaoProposals[i])
+      } else if(Object.keys(freshDaoProposals[i].status)[0] === "Rejected"){
+        freshR.push(freshDaoProposals[i])
+      }
+      else if(Object.keys(freshDaoProposals[i].status)[0] === "Accepted"){
+        freshA.push(freshDaoProposals[i])
+      }
+    }
+    setDaoOngoingProposals(freshO)
+    setDaoRejectedProposals(freshR)
+    setDaoAcceptedProposals(freshA)
     setDaoProposals(freshDaoProposals)
+    console.log("freshDaoProposals", freshDaoProposals)
     setRefreshDone(true)
   }
 
-  const handleNewProposal = async (e) => {
+
+
+  async function handleVote(e,id,upvote) {
     e.preventDefault()
-    let propText = document.getElementById("comment").value
-    console.log("e.target.form.comment.value", propText)
-    console.log("newProposal", propText)
-    await daoC.addProposal(propText)
+    console.log("id upvote", id, upvote)
+    await daoC.vote(id, upvote)
     refreshDaoProposals()
   }
 
-  // useEffect(()=>{}, [refreshDone])
-  /*
+  useEffect(()=>{}, [refreshDone])
+  useEffect(()=>{}, [daoRejectedProposals])
+  useEffect(()=>{}, [refreshDone])
+
+
+  
   useEffect(() => {
     console.log("dao proposals 0", daoProposals)
     if (!daoProposals) {
@@ -35,42 +80,90 @@ const Proposals = () => {
     }
     refreshDaoProposals()
   }, [])
-  */
+  
 
   return (
-    <div className="">
-        <div>
-            <br/>
-            <br/>
-            <br/>
-        <label htmlFor="comment" className="block text-sm font-medium text-gray-700">
-            Add your proposal
-        </label>
-        <div className="mt-1">
-            <textarea
-            rows={4}
-            name="comment"
-            id="comment"
-            className="w-1/3 rounded-md border-solid border-indigo-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            defaultValue={''}
-            />
-        </div>
+    <div className="container w-3/4">
+      
+        <div className="flex">
+        <h3 className="text-lg font-medium leading-6 text-gray-900">
+          <button
+            type="button"
+            className="inline-flex items-center px-3 py-1.5 border border-transparent text-md font-medium rounded-full text-indigo-800"
+            onClick={(e)=>{e.preventDefault();toggleModal("ongoing")}}
+          >
+          Ongoing
+        </button>
+        </h3>
+        &nbsp;
+        &nbsp;
+        &nbsp;
+        <h3 className="text-lg font-medium leading-6 text-gray-900">
         <button
-        type="button"
-        className="inline-flex items-center rounded border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-        onClick={handleNewProposal}
-        >
-        Add Proposal
-      </button>
+            type="button"
+            className="inline-flex items-center px-3 py-1.5 border border-transparent text-md font-medium rounded-full text-green-800"
+            onClick={(e)=>{e.preventDefault();toggleModal("accepted")}}
+          >
+          Accepted
+        </button>
+        </h3>
+        &nbsp;
+        &nbsp;
+        &nbsp;
+        <h3 className="text-lg font-medium leading-6 text-gray-900">
+          <button
+              type="button"
+              className="inline-flex items-center px-3 py-1.5 border border-transparent text-md font-medium rounded-full text-red-800"
+              onClick={(e)=>{e.preventDefault();toggleModal("rejected")}}
+            >
+            Rejected
+          </button>
+        </h3>
         </div>
-        <ul role="list" className="divide-y divide-gray-200">
-        {daoProposals.map((item) => (
-            <li key={item.newProposal} className="py-4">
-                <div className="font-bold">{item.newProposal}</div>
-                <div>Votes : {Number(item.numberOfVotes)}</div>
-            </li>
+        <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {showRejected && 
+        daoRejectedProposals.map((item) => (
+              <div className="grid grid-cols-5 border-2 border-solid rounded-md p-1 hover:bg-slate-100" key={item.id}>
+                <div className="col-span-1">
+                  <div>ID : {Number(item.id)}</div>
+                </div>
+                <div className="col-span-4">
+                  <div className="font-bold">Proposal Text : {item.proposalText}</div>
+                  <div>Votes : {Number(item.numberOfVotes)}</div>
+                  <div>Status : {Object.keys(item.status)[0]}</div>   
+                </div>
+              </div>  
         ))}
-        </ul>
+        {showAccepted && daoAcceptedProposals.map((item) => (
+              <div className="grid grid-cols-5 border-2 border-solid rounded-md p-1 hover:bg-slate-100" key={item.id}>
+                <div className="col-span-1">
+                  <div>ID : {Number(item.id)}</div>
+                </div>
+                <div className="col-span-4">
+                  <div className="font-bold">Proposal Text : {item.proposalText}</div>
+                  <div>Votes : {Number(item.numberOfVotes)}</div>
+                  <div>Status : {Object.keys(item.status)[0]}</div>   
+                </div>
+              </div>  
+        ))}
+        {showOngoing && daoOngoingProposals.map((item) => (
+              <div className="grid grid-cols-5 border-2 border-solid rounded-md p-1 hover:bg-slate-100" key={item.id}>
+                <div className="col-span-1">
+                  <button onClick={(e) => handleVote(e, item.id, true)}>
+                    <ArrowCircleUpIcon className="h-10 w-10 text-blue-500"/>
+                  </button>
+                  <button onClick={(e) => handleVote(e, item.id, false)}>
+                    <ArrowCircleDownIcon className="h-10 w-10 text-red-500"/>
+                  </button>
+                  <div>ID : {Number(item.id)}</div>
+                </div>
+                <div className="col-span-4">
+                  <div className="font-bold">Proposal Text : {item.proposalText}</div>
+                  <div>Votes : {Number(item.numberOfVotes)}</div>
+                </div>
+              </div>  
+        ))}
+        </dl>
     </div>
   )
 }
