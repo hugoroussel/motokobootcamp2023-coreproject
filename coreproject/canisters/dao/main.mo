@@ -122,7 +122,10 @@ actor class VODAO() = this {
         Text.hash(Nat64.toText(n));
     };
     var id : Nat64 = 0;
-    var proposals = HashMap.HashMap<Nat64, Proposal>(0, Nat64.equal, nat64Hash);
+
+    stable var proposalEntries : [(Nat64, Proposal)] = [];
+    let proposals = HashMap.fromIter<Nat64,Proposal>(proposalEntries.vals(), Iter.size(proposalEntries.vals()), Nat64.equal, nat64Hash);
+    // var proposals = HashMap.HashMap<Nat64, Proposal>(0, Nat64.equal, nat64Hash);
 
     var emptyHashMap = HashMap.HashMap<Principal, Bool>(0, Principal.equal, Principal.hash);
 
@@ -265,5 +268,14 @@ actor class VODAO() = this {
 
     public func idQuick() : async Principal {
         return Principal.fromActor(this);
+    };
+
+    // upgrade methods
+     system func preupgrade() {
+      proposalEntries := Iter.toArray(proposals.entries());
+    };
+
+    system func postupgrade() {
+      proposalEntries := [];
     };
 }
