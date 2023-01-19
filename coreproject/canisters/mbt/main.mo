@@ -7,7 +7,9 @@ import Error "mo:base/Error";
 import Time "mo:base/Time";
 import Int "mo:base/Int";
 import Nat8 "mo:base/Nat8";
+import Nat "mo:base/Nat";
 import Nat64 "mo:base/Nat64";
+import Debug "mo:base/Debug";
 
 shared ({ caller = initializer }) actor class Ledger() = this {
 
@@ -191,16 +193,21 @@ shared ({ caller = initializer }) actor class Ledger() = this {
       switch (lastApprovalTs) {
         case (?expires_at) {
           if (expires_at < tx.timestamp) {
+            Debug.print("Resetting allowance for");
             allowance := 0;
             lastApprovalTs := null;
           };
         };
-        case (null) {};
+        case (null) {
+          Debug.print("No reseting needed");
+        };
       };
       // Add pending approvals.
       switch (tx.operation) {
         case (#Approve(args)) {
           if (args.from == account and args.spender == spender) {
+            Debug.print("Found something");
+
             allowance := Int.max(0, allowance + args.amount);
             lastApprovalTs := args.expires_at;
           };
@@ -216,7 +223,10 @@ shared ({ caller = initializer }) actor class Ledger() = this {
 
     switch (lastApprovalTs) {
       case (?expires_at) {
-        if (expires_at < now) { { allowance = 0; expires_at = null } } else {
+        if (expires_at < now) {            
+          Debug.print("expired?");
+          { allowance = 0; expires_at = null } } else {
+          Debug.print("not expired?");
           {
             allowance = Int.abs(allowance);
             expires_at = ?expires_at;
@@ -266,6 +276,7 @@ shared ({ caller = initializer }) actor class Ledger() = this {
     let log = Buffer.Buffer<Transaction>(100);
 
     let myAccount : Account = {owner = Principal.fromText("qdaue-mb5vz-iszz7-w5r7p-o6t2d-fit3j-rwvzx-77nt4-jmqj7-z27oa-2ae"); subaccount = ?defaultSubaccount};
+    let myAccountB : Account = {owner = Principal.fromText("xi6k6-vxxki-pa4lb-hjsat-vcsff-jql77-ynywr-fw3er-nreex-hnt5a-hqe"); subaccount = ?defaultSubaccount};
     
     // validateSubaccount(account.subaccount);
     let tx : Transaction = {
@@ -296,6 +307,21 @@ shared ({ caller = initializer }) actor class Ledger() = this {
       fee = 0;
       timestamp = now;
     };
+    let tx2 : Transaction = {
+      operation = #Mint({
+          spender = myAccountB.owner;
+          source = #Init;
+          from = myAccountB;
+          to = myAccountB;
+          amount = 10000000000;
+          fee = null;
+          memo = null;
+          created_at_time = ?now;
+      });
+      fee = 0;
+      timestamp = now;
+    };
+    log.add(tx2);
     log.add(tx1);
     log.add(tx);
     log;
@@ -483,6 +509,14 @@ shared ({ caller = initializer }) actor class Ledger() = this {
   }) : async Result<TxIndex, ApproveError> {
     validateSubaccount(from_subaccount);
     validateMemo(memo);
+    
+    switch(expires_at){
+      case(null){};
+      case(?something){
+        Debug.print(Nat64.toText(something));
+        Debug.print(Int.toText(Time.now()));
+      };
+    };
 
     let now = Nat64.fromNat(Int.abs(Time.now()));
 
@@ -577,7 +611,13 @@ shared ({ caller = initializer }) actor class Ledger() = this {
       case (#Err(err)) { return #Err(err) };
     };
 
+    Debug.print(Principal.toText(caller));
+    Debug.print(Principal.toText(from.owner));
+    Debug.print(Principal.toText(to.owner));
+
     let preTransferAllowance = allowance(from, caller, now);
+    Debug.print(Nat.toText(preTransferAllowance.allowance));
+
     if (preTransferAllowance.allowance < amount + effectiveFee) {
       return #Err(#InsufficientAllowance { allowance = preTransferAllowance.allowance });
     };

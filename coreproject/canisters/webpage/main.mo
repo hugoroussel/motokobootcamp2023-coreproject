@@ -71,7 +71,7 @@ actor {
     public query func http_request(req: HttpRequest) : async HttpResponse {
         // let proposal = await get_last_passed_proposal();
         return({
-            body = Text.encodeUtf8("Last passed proposal of the DAO is "#last_proposal.proposalText);
+            body = Text.encodeUtf8("Last passed proposal of the DAO is "#last_proposal);
             headers = [];
             status_code = 200;
             streaming_strategy = null;

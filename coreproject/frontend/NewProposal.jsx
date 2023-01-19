@@ -19,7 +19,7 @@ function NewProposal() {
     console.log("e.target.form.comment.value", propText)
     console.log("newProposal", propText)
     await daoC.submit_proposal(propText)
-    refreshDaoProposals()
+    // refreshDaoProposals()
   }
   return (
     <div className="bg-white">

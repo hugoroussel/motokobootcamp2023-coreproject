@@ -11,15 +11,92 @@ import Nat64 "mo:base/Nat64";
 import Time "mo:base/Time";
 import Int "mo:base/Int";
 import Debug "mo:base/Debug";
+import Array "mo:base/Array";
 
 
-actor {
+actor class VODAO() = this {
 
     // Everything related to calling the MB token.
     public type Account = { owner : Principal; subaccount : ?Subaccount };
+    public type Tokens = Nat;
+    public type Memo = Blob;
+    public type Timestamp = Nat64;
+    public type Result<T, E> = { #Ok : T; #Err : E };
+    public type TxIndex = Nat;
+    public type Operation = {
+        #Approve : Approve;
+        #Transfer : Transfer;
+        #Burn : Transfer;
+        #Mint : Transfer;
+    };
+    public type CommonFields = {
+        memo : ?Memo;
+        fee : ?Tokens;
+        created_at_time : ?Timestamp;
+    };
+    public type Approve = CommonFields and {
+        from : Account;
+        spender : Principal;
+        amount : Int;
+        expires_at : ?Nat64;
+    };
+    public type TransferSource = {
+        #Init;
+        #Icrc1Transfer;
+        #Icrc2TransferFrom;
+    };
+    public type Transfer = CommonFields and {
+        spender : Principal;
+        source : TransferSource;
+        to : Account;
+        from : Account;
+        amount : Tokens;
+    };
+    public type Allowance = { allowance : Nat; expires_at : ?Nat64 };
+    public type Transaction = {
+        operation : Operation;
+        // Effective fee for this transaction.
+        fee : Tokens;
+        timestamp : Timestamp;
+    };
+    public type DeduplicationError = {
+        #TooOld;
+        #Duplicate : { duplicate_of : TxIndex };
+        #CreatedInFuture : { ledger_time : Timestamp };
+    };
+    public type CommonError = {
+        #InsufficientFunds : { balance : Tokens };
+        #BadFee : { expected_fee : Tokens };
+        #TemporarilyUnavailable;
+        #GenericError : { error_code : Nat; message : Text };
+    };
+    public type TransferError = DeduplicationError or CommonError or {
+        #BadBurn : { min_burn_amount : Tokens };
+    };
+    public type ApproveError = DeduplicationError or CommonError or {
+        #Expired : { ledger_time : Nat64 };
+    };
+    public type TransferFromError = TransferError or {
+        #InsufficientAllowance : { allowance : Nat };
+    };
+
     public type Subaccount = Blob;
-    let mbt : actor { icrc1_balance_of: (Account) -> async Nat;} = actor("renrk-eyaaa-aaaaa-aaada-cai");
-    let webpage : actor { set_last_proposal: (Proposal) -> async ();} = actor("rno2w-sqaaa-aaaaa-aaacq-cai");
+
+    public type TransferFrom = {
+        from : Account;
+        to : Account;
+        amount : Tokens;
+        fee : ?Tokens;
+        memo : ?Memo;
+        created_at_time : ?Timestamp;
+    };
+
+
+    let mbt : actor { 
+        icrc1_balance_of: (Account) -> async Nat;
+        icrc2_transfer_from: (TransferFrom) -> async  Result<TxIndex, TransferFromError>;
+    } = actor("renrk-eyaaa-aaaaa-aaada-cai");
+    let webpage : actor { set_last_proposal: (Text) -> async ();} = actor("rno2w-sqaaa-aaaaa-aaacq-cai");
 
     var daoName: Text = "VodaDao";
     var thresholdAcceptance: Int = 100;
@@ -35,6 +112,7 @@ actor {
         id: Nat64;
         proposalText: Text;
         numberOfVotes: Int;
+        voters : List.List<Principal>;
         creator: Principal;
         status: ProposalStatus;
         time: Int;
@@ -49,25 +127,33 @@ actor {
     var emptyHashMap = HashMap.HashMap<Principal, Bool>(0, Principal.equal, Principal.hash);
 
     // Initialized for debugging purposes
-    var last_passed_proposal : Proposal = {id=0; proposalText = "Initial Proposal"; numberOfVotes = 0; creator = Principal.fromText("qdaue-mb5vz-iszz7-w5r7p-o6t2d-fit3j-rwvzx-77nt4-jmqj7-z27oa-2ae"); status = #OnGoing; time = Time.now()};
+    var last_passed_proposal : Proposal = {
+        id=0;
+        proposalText = "Initial Proposal";
+        voters = List.nil<Principal>();
+        numberOfVotes = 0;
+        creator = Principal.fromText("qdaue-mb5vz-iszz7-w5r7p-o6t2d-fit3j-rwvzx-77nt4-jmqj7-z27oa-2ae");
+        status = #OnGoing;
+        time = Time.now()
+        };
 
     public shared ({caller}) func submit_proposal(proposalText : Text) : async Bool {
         // Checks
         assert await _checks(caller);
         let time = Time.now();
         // check if the proposal is not already in the DAO
-        let proposal = {id=id; proposalText = proposalText; numberOfVotes = 0; creator = caller; status = #OnGoing; time = time};
+        let proposal = {id=id; proposalText = proposalText; voters = List.nil<Principal>(); numberOfVotes = 0; creator = caller; status = #OnGoing; time = time};
         proposals.put(id, proposal);
         id += 1;
         return true;
     };
 
     public shared ({caller}) func vote(id : Nat64, upvote : Bool) : async Bool {
-        // Checks
+        // Standard Identity Checks
         assert await _checks(caller);
-        // check if the proposal exists
+        // Check if the proposal exists
         var proposal = proposals.get(id);
-        // get user balance
+        // Get user balance
         let balance = await _getBalance(Principal.toText(caller));
         var newNumberOfVotes : Int = balance;
         switch(proposal){
@@ -77,7 +163,19 @@ actor {
             case(?proposal){
                 if(proposal.status != #OnGoing){
                     // Cannot vote on a proposal that is not ongoing
-                    return false;
+                    assert false;
+                };
+                // check if the user has already voted
+                let hasVoted : ?Principal = List.find<Principal>(proposal.voters, func x = Principal.toText(x) == Principal.toText(caller));
+                switch(hasVoted){
+                    case(null){
+                        // User has not voted yet
+                    };
+                    case(?hasVoted){
+                        // User has already voted
+                        assert false;
+                        // return false;
+                    };
                 };
                 if (upvote){
                     newNumberOfVotes := proposal.numberOfVotes+balance;
@@ -85,21 +183,42 @@ actor {
                     newNumberOfVotes := proposal.numberOfVotes-balance;
                 };
                 Debug.print(Int.toText(newNumberOfVotes));
+                let newVoters : List.List<Principal> = List.push(caller, proposal.voters);
                 if(newNumberOfVotes>=thresholdAcceptance){
-                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
+                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
                     last_passed_proposal := updatedProposal;
-                    await webpage.set_last_proposal(last_passed_proposal);
+                    await webpage.set_last_proposal(last_passed_proposal.proposalText);
                     proposals.put(proposal.id, updatedProposal);
                 } else if (newNumberOfVotes<=thresholdRejection){
-                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
+                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
                     proposals.put(proposal.id, updatedProposal);
                 } else {
-                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
+                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
                     proposals.put(proposal.id, updatedProposal);
                 };
                 return true;
             };
         };   
+    };
+
+    // Neurons functions
+    let defaultSubaccount : Subaccount = Blob.fromArrayMut(Array.init(32, 0 : Nat8));
+
+    public shared ({caller}) func lock() : async Result<TxIndex, TransferFromError> {
+        Debug.print("Locking");
+        Debug.print(Principal.toText(caller));
+        let callerAccount : Account = {owner: Principal = caller; subaccount: ?Blob = ?defaultSubaccount};
+        let dao : Account = {owner : Principal = await idQuick(); subaccount = ?defaultSubaccount};
+        let transferFrom : TransferFrom = {
+            from = callerAccount;
+            to = dao;
+            amount = 100000000;
+            fee = null;
+            memo = null;
+            created_at_time = null;
+        };
+        await mbt.icrc2_transfer_from(transferFrom);
+        // return true;
     };
 
     // Getters
@@ -142,5 +261,9 @@ actor {
 
     public query func getDaoName() : async Text {
         return daoName;
+    };
+
+    public func idQuick() : async Principal {
+        return Principal.fromActor(this);
     };
 }

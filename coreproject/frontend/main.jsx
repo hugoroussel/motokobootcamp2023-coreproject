@@ -3,6 +3,7 @@ import ReactDOM from "react-dom"
 import "./index.css"
 import App from "./App"
 import NewProposal from "./NewProposal"
+import Locking from "./Locking"
 
 import {
   BrowserRouter as Router,
@@ -20,6 +21,9 @@ ReactDOM.render(
           </Route>
           <Route path="/new">
             <Route exact path='/new' element={<NewProposal/>}/>
+          </Route>
+          <Route path="/lock">
+            <Route exact path='/lock' element={<Locking/>}/>
           </Route>
     </Routes>
     </Router>
