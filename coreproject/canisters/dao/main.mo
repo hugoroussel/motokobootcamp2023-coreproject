@@ -35,7 +35,6 @@ actor class VODAO() = this {
     // TODO : change the actor principal id to the mainnet one
     let webpage : actor { set_last_proposal: (Text) -> async ();} = actor("rno2w-sqaaa-aaaaa-aaacq-cai");
 
-
     // DAO parameters
     var daoName: Text = "VodaDao";
     var thresholdAcceptance: Int = 100;
@@ -49,6 +48,10 @@ actor class VODAO() = this {
     var id : Nat64 = 0;
     stable var proposalEntries : [(Nat64, Types.Proposal)] = [];
     let proposals = HashMap.fromIter<Nat64, Types.Proposal>(proposalEntries.vals(), Iter.size(proposalEntries.vals()), Nat64.equal, nat64Hash);
+
+    // Neurons initialization and reinstantiation via stable memory
+    stable var neuronsEntries : [(Principal, Neuron)] = [];
+    let neurons = HashMap.fromIter<Principal, Neuron>(neuronsEntries.vals(), Iter.size(neuronsEntries.vals()), Principal.equal, Principal.hash);
 
     // The lastPassedProposal variable is the one reflected on the webpage canister and fully controlled by the dao. 
     // It is updated every time a proposal is accepted.
@@ -65,7 +68,7 @@ actor class VODAO() = this {
     // Submit a proposal to the DAO
     public shared ({caller}) func submit_proposal(proposalText : Text) : async Bool {
         // Checks
-        assert await _checks(caller);
+        // assert await _checks(caller);
         var time = Time.now();
         // TODO : check if the proposal is not already in the DAO
         let proposal = {id=id; proposalText = proposalText; voters = List.nil<Principal>(); numberOfVotes = 0; creator = caller; status = #OnGoing; time = time};
@@ -77,11 +80,12 @@ actor class VODAO() = this {
     // Vote on a proposal, if upvote is true the vote will be positive (currentAmountOfVotes + balance), if false the vote will be negative (currentAmountOfVotes - balance)
     public shared ({caller}) func vote(id : Nat64, upvote : Bool) : async Bool {
         // Standard Identity Checks
-        assert await _checks(caller);
+        // assert await _checks(caller);
         // Check if the proposal exists
         var proposal = proposals.get(id);
         // Get user balance 
-        let balance = await _getBalance(Principal.toText(caller));
+        // let account = 
+        let balance = 0;// await _getBalance(Principal.toText(caller));
         var newNumberOfVotes : Int = balance;
         switch(proposal){
             case(null){
@@ -150,10 +154,121 @@ actor class VODAO() = this {
         amount: Nat;
         dissolveDelay: Int;
         neuronState: NeuronState;
-        age: Int;
+        createdAt: Int;
+        depositSubaccount: Types.Subaccount;
     };
 
+    public type CommonError = {
+        #GenericError : {message : Text };
+    };
+
+    public type Result<T, E> = { #Ok : T; #CommonError : E };
+
     // Neurons methods
+
+    public shared ({caller}) func createNeuron(amount: Nat, dissolveDelay : Int) : async Result<(Bool), CommonError> {
+        // no anonymous caller
+        if(Principal.isAnonymous(caller)) {
+            return #CommonError(#GenericError {message = "Anonymous caller"});
+        };
+        // TODO : can re-init if the neuron is dissolved?
+        // check if the neuron already exists
+        if(neurons.get(caller) != null){
+            return #CommonError(#GenericError {message = "Neuron already exists"});
+        };
+        // check if the caller deposited enough tokens
+        let canisterPrincipal = await idQuick();
+        let callerSubAccount : Types.Subaccount =  await Helpers.accountIdentifier(canisterPrincipal, await Helpers.principalToSubaccount(caller));
+        let depositAccount = {owner = canisterPrincipal; subaccount = ?callerSubAccount};
+        let balance = await _getBalance(depositAccount);
+        Debug.print("Balance : " # Nat.toText(balance));
+        Debug.print("Amount : " # Nat.toText(amount));
+        if(amount < balance){
+            // user did not deposit enough :(
+            return #CommonError(#GenericError {message = "Not enough tokens deposited"});
+
+        };
+        Debug.print("Amount : " # Nat.toText(amount));
+        // create the neuron
+        let neuron = {
+            owner = caller;
+            amount = balance;
+            dissolveDelay = dissolveDelay;
+            neuronState = #Locked;
+            createdAt = Time.now();
+            depositSubaccount : Types.Subaccount = callerSubAccount;
+        };
+        // add the neuron to the map
+        neurons.put(caller, neuron);
+        return #Ok(true);
+    };
+
+
+    public shared ({caller}) func dissolveNeuron() : async (Bool) {
+        // no anonymous caller
+        if(Principal.isAnonymous(caller)) {
+            return false;
+        };
+        let mapEntry : ?Neuron = neurons.get(caller);
+        switch(mapEntry){
+            case(null){return false;};
+            case(?neuron){
+                switch(neuron.neuronState){
+                    case(#Locked){
+                        // user wants to start dissolving the neuron
+                        let updatedNeuron = {
+                            owner = neuron.owner;
+                            amount = neuron.amount;
+                            dissolveDelay = neuron.dissolveDelay;
+                            neuronState = #Dissolving;
+                            createdAt = neuron.createdAt;
+                            depositSubaccount = neuron.depositSubaccount;
+                        };
+                        neurons.put(caller, updatedNeuron);
+                        return true;
+                    };
+                    case(#Dissolving){
+                        if(neuron.createdAt+neuron.dissolveDelay < Time.now()){
+                            // neuron is ready to be dissolved and funds returned to the user
+                            let updatedNeuron = {
+                                owner = neuron.owner;
+                                amount = neuron.amount;
+                                dissolveDelay = neuron.dissolveDelay;
+                                neuronState = #Dissolved;
+                                createdAt = neuron.createdAt;
+                                depositSubaccount = neuron.depositSubaccount;
+                            };
+                            neurons.put(caller, updatedNeuron);
+                            // get the current balance of the neuron
+                            let canisterPrincipal = await idQuick();
+                            let depositAccount = {owner = canisterPrincipal; subaccount = ?neuron.depositSubaccount};
+                            let balance = await _getBalance(depositAccount);
+                            // send back the tokens to the user
+                            let transferParameters = {
+                                from_subaccount = ?neuron.depositSubaccount;
+                                to = {owner = caller; subaccount = null};
+                                amount = balance;
+                                fee = null;
+                                memo = null;
+                                created_at_time = null;
+                            };
+                            let res = await mbt.icrc1_transfer(transferParameters);
+                            return true;
+                        } else {
+                            // neuron is not ready to be dissolved
+                            return false;
+                        };
+                    };
+                    case (#Dissolved){
+                        // neuron is already dissolved
+                        return false;
+                    };
+                }
+            };
+        };
+        return true;
+    };
+
 
     let defaultSubaccount : Types.Subaccount = Blob.fromArrayMut(Array.init(32, 0 : Nat8));
 
@@ -161,8 +276,8 @@ actor class VODAO() = this {
     public shared ({caller}) func unlock() : async Types.Result<Types.TxIndex, Types.TransferFromError> {
         let canisterPrincipal = await idQuick();
         let subAccount : Types.Subaccount = await Helpers.accountIdentifier(canisterPrincipal, await Helpers.principalToSubaccount(caller));
-        let from : Types.Account = {owner: Principal = canisterPrincipal; subaccount: ?Blob = ?subAccount};
-        let to : Types.Account = {owner: Principal = caller; subaccount: ?Blob = null};
+        let from : Types.Account = {owner: Principal = canisterPrincipal; subaccount: ?Types.Subaccount = ?subAccount};
+        let to : Types.Account = {owner: Principal = caller; subaccount: ?Types.Subaccount = null};
         let transferFrom : Types.TransferParameters = {
             from_subaccount = ?subAccount;
             to = to;
@@ -201,7 +316,7 @@ actor class VODAO() = this {
     };
 
     // Private functions
-
+    /*
     private func _checks(caller: Principal) : async Bool {
         // no anonymous submissions
         if(Principal.isAnonymous(caller)) {
@@ -215,12 +330,12 @@ actor class VODAO() = this {
         };
         return true;
     };
+    */
 
-    public func _getBalance(caller : Text) : async Nat {
-        let principal = Principal.fromText(caller);
-        let account = { owner = principal; subaccount = null };
+    public func _getBalance(account : Types.Account) : async Nat {
+        // let account = { owner = principal; subaccount = null };
         var res = await mbt.icrc1_balance_of(account);
-        res := res/100000000;
+        // res := res/100000000;
         return res;
     };
 
@@ -234,11 +349,13 @@ actor class VODAO() = this {
 
     // Upgrade methods
 
-     system func preupgrade() {
+    system func preupgrade() {
       proposalEntries := Iter.toArray(proposals.entries());
+      neuronsEntries := Iter.toArray(neurons.entries());
     };
 
     system func postupgrade() {
       proposalEntries := [];
+      neuronsEntries := [];
     };
 }

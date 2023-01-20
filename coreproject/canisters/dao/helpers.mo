@@ -18,13 +18,13 @@ module {
         [byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)]
     };
 
-    public func principalToSubaccount(principal: Principal) : async Blob {
+    public func principalToSubaccount(principal: Principal) : async Types.Subaccount {
       let idHash = SHA224.Digest();
         idHash.write(Blob.toArray(Principal.toBlob(principal)));
         let hashSum = idHash.sum();
         let crc32Bytes = await beBytes(CRC32.ofArray(hashSum));
         let buf = Buffer.Buffer<Nat8>(32);
-        let blob = Blob.fromArray(Array.append(crc32Bytes, hashSum));
+        let blob : Types.Subaccount = Blob.fromArray(Array.append(crc32Bytes, hashSum));
         return blob;
     };
   
@@ -36,6 +36,7 @@ module {
         hash.write(Blob.toArray(subaccount));
         let hashSum = hash.sum();
         let crc32Bytes = await beBytes(CRC32.ofArray(hashSum));
-        Blob.fromArray(Array.append(crc32Bytes, hashSum))
+        let res : Types.Subaccount = Blob.fromArray(Array.append(crc32Bytes, hashSum));
+        return res;
     };
 }

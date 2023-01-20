@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useCanister, useBalance, useWallet,ConnectButton,ConnectDialog} from "@connect2ic/react"
 import {Link} from "react-router-dom"
 import {PlusIcon, HomeIcon, LockClosedIcon} from '@heroicons/react/solid'
-import { HttpAgent } from '@dfinity/agent'
+import { Principal } from '@dfinity/principal';
 
 const Navbar = () => {
 
@@ -15,10 +15,13 @@ const Navbar = () => {
     const refreshBalance = async () => {
         console.log("wallet", wallet)
         if (wallet?.principal){
-            console.log("refreshing balance of", wallet.principal)
-            const freshMbtBalance = await daoC._getBalance(wallet.principal)
+            let account = {
+                owner : Principal.fromText(wallet.principal),
+                subaccount : [],
+            }
+            const freshMbtBalance = await daoC._getBalance(account)
             console.log("freshMbtBalance", freshMbtBalance)
-            setMbtBalance(Number(freshMbtBalance))
+            setMbtBalance(Number(freshMbtBalance/BigInt(100000000)))
         } else {
             console.log("no wallet")
         }
