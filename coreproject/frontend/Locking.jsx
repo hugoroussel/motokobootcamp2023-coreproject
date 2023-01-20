@@ -79,6 +79,21 @@ function Locking() {
     console.log("balance", balance)
   }
 
+  const handleGetTime = async (e) => {
+    e.preventDefault()
+    console.log("handle get time")
+    let time = await daoC.getTime();
+    console.log("current set time", time)
+  }
+
+
+  const handleSetTime = async (e) => {
+    e.preventDefault()
+    console.log("handle set time")
+    let time = await daoC.setTime();
+    console.log("time was set", time)
+  }
+
   return (
     <div className="bg-white">
       <Navbar/>
@@ -124,6 +139,22 @@ function Locking() {
           onClick={balance}
           >
           Balance
+          </button>
+          &nbsp;&nbsp;&nbsp;&nbsp;
+          <button
+          type="button"
+          className="inline-flex items-center rounded border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          onClick={handleGetTime}
+          >
+          time
+          </button>
+          &nbsp;&nbsp;&nbsp;&nbsp;
+          <button
+          type="button"
+          className="inline-flex items-center rounded border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          onClick={handleSetTime}
+          >
+          update time
           </button>
         </div>
       </div>

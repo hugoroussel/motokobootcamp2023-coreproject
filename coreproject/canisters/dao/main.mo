@@ -1,142 +1,58 @@
+// Base data structures 
 import List "mo:base/List";
-import Option "mo:base/Option";
 import HashMap "mo:base/HashMap";
-import Hash "mo:base/Hash";
+import Buffer "mo:base/Buffer";
+import Array "mo:base/Array";
+// Base basic types
 import Text "mo:base/Text";
 import Nat "mo:base/Nat";
-import Iter "mo:base/Iter";
-import Principal "mo:base/Principal";
-import Blob "mo:base/Blob";
-import Nat64 "mo:base/Nat64";
-import Time "mo:base/Time";
-import Int "mo:base/Int";
-import Debug "mo:base/Debug";
-import Array "mo:base/Array";
-import SHA224 "./SHA224";
-import CRC32 "./CRC32";
 import Nat8 "mo:base/Nat8";
 import Nat32 "mo:base/Nat32";
-import Buffer "mo:base/Buffer";
-
+import Nat64 "mo:base/Nat64";
+import Int "mo:base/Int";
+import Blob "mo:base/Blob";
+// Base identity
+import Principal "mo:base/Principal";
+// Base others
+import Iter "mo:base/Iter";
+import Option "mo:base/Option";
+import Hash "mo:base/Hash";
+import Time "mo:base/Time";
+import Debug "mo:base/Debug";
+// Types
+import Types "./types";
+// Helpers
+import Helpers "./helpers";
 
 actor class VODAO() = this {
 
-    // Everything related to calling the MB token.
-    public type Account = { owner : Principal; subaccount : ?Subaccount };
-    public type Tokens = Nat;
-    public type Memo = Blob;
-    public type Timestamp = Nat64;
-    public type Result<T, E> = { #Ok : T; #Err : E };
-    public type TxIndex = Nat;
-    public type Operation = {
-        #Approve : Approve;
-        #Transfer : Transfer;
-        #Burn : Transfer;
-        #Mint : Transfer;
-    };
-    public type CommonFields = {
-        memo : ?Memo;
-        fee : ?Tokens;
-        created_at_time : ?Timestamp;
-    };
-    public type Approve = CommonFields and {
-        from : Account;
-        spender : Principal;
-        amount : Int;
-        expires_at : ?Nat64;
-    };
-    public type TransferSource = {
-        #Init;
-        #Icrc1Transfer;
-        #Icrc2TransferFrom;
-    };
-    public type Transfer = CommonFields and {
-        spender : Principal;
-        source : TransferSource;
-        to : Account;
-        from : Account;
-        amount : Tokens;
-    };
-    public type Allowance = { allowance : Nat; expires_at : ?Nat64 };
-    public type Transaction = {
-        operation : Operation;
-        // Effective fee for this transaction.
-        fee : Tokens;
-        timestamp : Timestamp;
-    };
-    public type DeduplicationError = {
-        #TooOld;
-        #Duplicate : { duplicate_of : TxIndex };
-        #CreatedInFuture : { ledger_time : Timestamp };
-    };
-    public type CommonError = {
-        #InsufficientFunds : { balance : Tokens };
-        #BadFee : { expected_fee : Tokens };
-        #TemporarilyUnavailable;
-        #GenericError : { error_code : Nat; message : Text };
-    };
-    public type TransferError = DeduplicationError or CommonError or {
-        #BadBurn : { min_burn_amount : Tokens };
-    };
-    public type ApproveError = DeduplicationError or CommonError or {
-        #Expired : { ledger_time : Nat64 };
-    };
-    public type TransferFromError = TransferError or {
-        #InsufficientAllowance : { allowance : Nat };
-    };
-
-    public type Subaccount = Blob;
-
-    public type TransferParameters = {
-        from_subaccount : ?Subaccount;
-        to : Account;
-        amount : Tokens;
-        fee : ?Tokens;
-        memo : ?Memo;
-        created_at_time : ?Timestamp;
-    };
-
-
+    // TODO : change the actor principal id to the mainnet one
     let mbt : actor { 
-        icrc1_balance_of: (Account) -> async Nat;
-        icrc1_transfer: (TransferParameters) -> async Result<TxIndex, TransferError>;
-        // icrc2_transfer_from: (TransferParameters) -> async  Result<TxIndex, TransferFromError>;
+        icrc1_balance_of: (Types.Account) -> async Nat;
+        icrc1_transfer: (Types.TransferParameters) -> async Types.Result<Types.TxIndex, Types.TransferError>;
     } = actor("renrk-eyaaa-aaaaa-aaada-cai");
+
+    // TODO : change the actor principal id to the mainnet one
     let webpage : actor { set_last_proposal: (Text) -> async ();} = actor("rno2w-sqaaa-aaaaa-aaacq-cai");
 
+
+    // DAO parameters
     var daoName: Text = "VodaDao";
     var thresholdAcceptance: Int = 100;
     var thresholdRejection: Int = -100;
+    var timeLastUpdated : Int = 0;
 
-    type ProposalStatus = {
-        #OnGoing;
-        #Rejected;
-        #Accepted;
-    };
-
-    public type Proposal = {
-        id: Nat64;
-        proposalText: Text;
-        numberOfVotes: Int;
-        voters : List.List<Principal>;
-        creator: Principal;
-        status: ProposalStatus;
-        time: Int;
-    };
-
+    // Proposals initialization and reinstantiation via stable memory
     func nat64Hash(n : Nat64) : Hash.Hash { 
         Text.hash(Nat64.toText(n));
     };
     var id : Nat64 = 0;
+    stable var proposalEntries : [(Nat64, Types.Proposal)] = [];
+    let proposals = HashMap.fromIter<Nat64, Types.Proposal>(proposalEntries.vals(), Iter.size(proposalEntries.vals()), Nat64.equal, nat64Hash);
 
-    stable var proposalEntries : [(Nat64, Proposal)] = [];
-    let proposals = HashMap.fromIter<Nat64,Proposal>(proposalEntries.vals(), Iter.size(proposalEntries.vals()), Nat64.equal, nat64Hash);
-    // var proposals = HashMap.HashMap<Nat64, Proposal>(0, Nat64.equal, nat64Hash);
-
-    var emptyHashMap = HashMap.HashMap<Principal, Bool>(0, Principal.equal, Principal.hash);
-
-    // Initialized for debugging purposes
-    var last_passed_proposal : Proposal = {
+    // The lastPassedProposal variable is the one reflected on the webpage canister and fully controlled by the dao. 
+    // It is updated every time a proposal is accepted.
+    var lastPassedProposal : Types.Proposal = {
         id=0;
         proposalText = "Initial Proposal";
         voters = List.nil<Principal>();
@@ -144,25 +60,27 @@ actor class VODAO() = this {
         creator = Principal.fromText("qdaue-mb5vz-iszz7-w5r7p-o6t2d-fit3j-rwvzx-77nt4-jmqj7-z27oa-2ae");
         status = #OnGoing;
         time = Time.now()
-        };
+    };
 
+    // Submit a proposal to the DAO
     public shared ({caller}) func submit_proposal(proposalText : Text) : async Bool {
         // Checks
         assert await _checks(caller);
-        let time = Time.now();
-        // check if the proposal is not already in the DAO
+        var time = Time.now();
+        // TODO : check if the proposal is not already in the DAO
         let proposal = {id=id; proposalText = proposalText; voters = List.nil<Principal>(); numberOfVotes = 0; creator = caller; status = #OnGoing; time = time};
         proposals.put(id, proposal);
         id += 1;
         return true;
     };
 
+    // Vote on a proposal, if upvote is true the vote will be positive (currentAmountOfVotes + balance), if false the vote will be negative (currentAmountOfVotes - balance)
     public shared ({caller}) func vote(id : Nat64, upvote : Bool) : async Bool {
         // Standard Identity Checks
         assert await _checks(caller);
         // Check if the proposal exists
         var proposal = proposals.get(id);
-        // Get user balance
+        // Get user balance 
         let balance = await _getBalance(Principal.toText(caller));
         var newNumberOfVotes : Int = balance;
         switch(proposal){
@@ -195,8 +113,8 @@ actor class VODAO() = this {
                 let newVoters : List.List<Principal> = List.push(caller, proposal.voters);
                 if(newNumberOfVotes>=thresholdAcceptance){
                     var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
-                    last_passed_proposal := updatedProposal;
-                    await webpage.set_last_proposal(last_passed_proposal.proposalText);
+                    lastPassedProposal := updatedProposal;
+                    await webpage.set_last_proposal(lastPassedProposal.proposalText);
                     proposals.put(proposal.id, updatedProposal);
                 } else if (newNumberOfVotes<=thresholdRejection){
                     var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
@@ -210,19 +128,42 @@ actor class VODAO() = this {
         };   
     };
 
-    // Neurons functions
-    let defaultSubaccount : Subaccount = Blob.fromArrayMut(Array.init(32, 0 : Nat8));
+    // Time
+    public shared func getTime() : async Int {
+        return timeLastUpdated;
+    };
+
+    public shared func setTime() : async Bool {
+        timeLastUpdated := Time.now();
+        return true;
+    };
+
+    // Neurons types
+    public type NeuronState = {
+        #Locked;
+        #Dissolving;
+        #Dissolved;
+    };
+
+    public type Neuron = {
+        owner: Principal;
+        amount: Nat;
+        dissolveDelay: Int;
+        neuronState: NeuronState;
+        age: Int;
+    };
+
+    // Neurons methods
+
+    let defaultSubaccount : Types.Subaccount = Blob.fromArrayMut(Array.init(32, 0 : Nat8));
 
     // public shared ({caller}) func lock() : async Result<TxIndex, TransferFromError> {
-    public shared ({caller}) func unlock() : async Result<TxIndex, TransferFromError> {
-        Debug.print("caller is unlocking "#Principal.toText(caller));
+    public shared ({caller}) func unlock() : async Types.Result<Types.TxIndex, Types.TransferFromError> {
         let canisterPrincipal = await idQuick();
-        Debug.print("canister principal "#Principal.toText(canisterPrincipal));
-        let subAccount : AccountIdentifier = await accountIdentifier(canisterPrincipal, await principalToSubaccount(caller));
-        // Debug.print(subAccount);
-        let from : Account = {owner: Principal = canisterPrincipal; subaccount: ?Blob = ?subAccount};
-        let to : Account = {owner: Principal = caller; subaccount: ?Blob = null};
-        let transferFrom : TransferParameters = {
+        let subAccount : Types.Subaccount = await Helpers.accountIdentifier(canisterPrincipal, await Helpers.principalToSubaccount(caller));
+        let from : Types.Account = {owner: Principal = canisterPrincipal; subaccount: ?Blob = ?subAccount};
+        let to : Types.Account = {owner: Principal = caller; subaccount: ?Blob = null};
+        let transferFrom : Types.TransferParameters = {
             from_subaccount = ?subAccount;
             to = to;
             amount = 100000000;
@@ -234,57 +175,28 @@ actor class VODAO() = this {
         // return true;
     };
 
-    // Helpers
-    public func beBytes(n : Nat32) : async [Nat8] {
-        func byte(n : Nat32) : Nat8 {
-            Nat8.fromNat(Nat32.toNat(n & 0xff))
-        };
-        [byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)]
-    };
-
-    public func principalToSubaccount(principal: Principal) : async Blob {
-      let idHash = SHA224.Digest();
-        idHash.write(Blob.toArray(Principal.toBlob(principal)));
-        let hashSum = idHash.sum();
-        let crc32Bytes = await beBytes(CRC32.ofArray(hashSum));
-        let buf = Buffer.Buffer<Nat8>(32);
-        let blob = Blob.fromArray(Array.append(crc32Bytes, hashSum));
-        return blob;
-    };
-
-    public type AccountIdentifier = Blob;
-  
-    public func accountIdentifier(principal: Principal, subaccount: Subaccount) : async AccountIdentifier {
-        let hash = SHA224.Digest();
-        hash.write([0x0A]);
-        hash.write(Blob.toArray(Text.encodeUtf8("account-id")));
-        hash.write(Blob.toArray(Principal.toBlob(principal)));
-        hash.write(Blob.toArray(subaccount));
-        let hashSum = hash.sum();
-        let crc32Bytes = await beBytes(CRC32.ofArray(hashSum));
-        Blob.fromArray(Array.append(crc32Bytes, hashSum))
-    };
-
-    public shared ({ caller }) func getAddress() : async AccountIdentifier {
-      // Returns a account derived from the canister's Principal and a subaccount. The subaccount is being derived from the caller's Principal.
+    // Helper functions
+    
+    // Returns a account derived from the canister's Principal and a subaccount. The subaccount is being derived from the caller's Principal.
+    public shared ({ caller }) func getAddress() : async Types.Subaccount {
       Debug.print("caller getAddress");
       Debug.print(Principal.toText(caller));
       let principalCanister = await idQuick();
-      let subAcccount = await principalToSubaccount(caller);
-      return await accountIdentifier(principalCanister, subAcccount);
+      let subAcccount = await Helpers.principalToSubaccount(caller);
+      return await Helpers.accountIdentifier(principalCanister, subAcccount);
     };
 
     // Getters
 
-    public func get_last_passed_proposal() : async Text {
-        return last_passed_proposal.proposalText;
+    public func get_lastPassedProposal() : async Text {
+        return lastPassedProposal.proposalText;
     };
 
-    public query func get_all_proposals() : async [Proposal] {
+    public query func get_all_proposals() : async [Types.Proposal] {
         return Iter.toArray(proposals.vals());
     };
 
-    public query func get_proposal(id : Nat64) : async ?Proposal {
+    public query func get_proposal(id : Nat64) : async ?Types.Proposal {
         return proposals.get(id)
     };
 
@@ -320,7 +232,8 @@ actor class VODAO() = this {
         return Principal.fromActor(this);
     };
 
-    // upgrade methods
+    // Upgrade methods
+
      system func preupgrade() {
       proposalEntries := Iter.toArray(proposals.entries());
     };

@@ -84,7 +84,6 @@ const Proposals = () => {
 
   return (
     <div className="container w-3/4">
-      
         <div className="flex">
         <h3 className="text-lg font-medium leading-6 text-gray-900">
           <button
@@ -160,6 +159,7 @@ const Proposals = () => {
                 <div className="col-span-4">
                   <div className="font-bold">Proposal Text : {item.proposalText}</div>
                   <div>Votes : {Number(item.numberOfVotes)}</div>
+                  <div>Time : {(new Date(Number(item.time/BigInt(1000000000))*1000)).toString().substring(3,24)}</div>
                 </div>
               </div>  
         ))}

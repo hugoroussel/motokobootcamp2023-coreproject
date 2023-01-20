@@ -45,7 +45,7 @@ const client = createClient({
     dao,
     mbt
   },
-  providers: [PlugWallet],
+  providers: defaultProviders,
   globalProviderConfig: {
     /*
      * Disables dev mode in production
