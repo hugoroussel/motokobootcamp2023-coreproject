@@ -39,9 +39,23 @@ function Locking() {
   const handleNewLock = async (e) => {
     console.log("handleNewLock")
     e.preventDefault()
-    let res = await daoC.lock();
-    console.log("res lock", res)
-    // refreshDaoProposals()
+    let subAccount = await daoC.getAddress();
+    console.log("subAccount", subAccount)
+    let princinpalCanister = await daoC.idQuick();
+    let transferParameters = {
+      from_subaccount: [],
+      to: {
+        owner : princinpalCanister,
+        subaccount : [subAccount],
+      },
+      amount: 100000000,
+      fee: [],
+      memo: [],
+      created_at_time: [],
+    }
+    console.log("transferParameters", transferParameters)
+    let send = await mbtC.icrc1_transfer(transferParameters)
+    console.log("send", send)
   }
 
   return (
