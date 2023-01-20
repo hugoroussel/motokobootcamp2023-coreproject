@@ -87,8 +87,8 @@ actor class VODAO() = this {
 
     public type Subaccount = Blob;
 
-    public type TransferFrom = {
-        from : Account;
+    public type TransferParameters = {
+        from_subaccount : ?Subaccount;
         to : Account;
         amount : Tokens;
         fee : ?Tokens;
@@ -99,7 +99,8 @@ actor class VODAO() = this {
 
     let mbt : actor { 
         icrc1_balance_of: (Account) -> async Nat;
-        icrc2_transfer_from: (TransferFrom) -> async  Result<TxIndex, TransferFromError>;
+        icrc1_transfer: (TransferParameters) -> async Result<TxIndex, TransferError>;
+        // icrc2_transfer_from: (TransferParameters) -> async  Result<TxIndex, TransferFromError>;
     } = actor("renrk-eyaaa-aaaaa-aaada-cai");
     let webpage : actor { set_last_proposal: (Text) -> async ();} = actor("rno2w-sqaaa-aaaaa-aaacq-cai");
 
@@ -212,20 +213,24 @@ actor class VODAO() = this {
     // Neurons functions
     let defaultSubaccount : Subaccount = Blob.fromArrayMut(Array.init(32, 0 : Nat8));
 
-    public shared ({caller}) func lock() : async Result<TxIndex, TransferFromError> {
-        Debug.print("Locking");
-        Debug.print(Principal.toText(caller));
-        let callerAccount : Account = {owner: Principal = caller; subaccount: ?Blob = ?defaultSubaccount};
-        let dao : Account = {owner : Principal = await idQuick(); subaccount = ?defaultSubaccount};
-        let transferFrom : TransferFrom = {
-            from = callerAccount;
-            to = dao;
+    // public shared ({caller}) func lock() : async Result<TxIndex, TransferFromError> {
+    public shared ({caller}) func unlock() : async Result<TxIndex, TransferFromError> {
+        Debug.print("caller is unlocking "#Principal.toText(caller));
+        let canisterPrincipal = await idQuick();
+        Debug.print("canister principal "#Principal.toText(canisterPrincipal));
+        let subAccount : AccountIdentifier = await accountIdentifier(canisterPrincipal, await principalToSubaccount(caller));
+        // Debug.print(subAccount);
+        let from : Account = {owner: Principal = canisterPrincipal; subaccount: ?Blob = ?subAccount};
+        let to : Account = {owner: Principal = caller; subaccount: ?Blob = null};
+        let transferFrom : TransferParameters = {
+            from_subaccount = ?subAccount;
+            to = to;
             amount = 100000000;
             fee = null;
             memo = null;
             created_at_time = null;
         };
-        await mbt.icrc2_transfer_from(transferFrom);
+        await mbt.icrc1_transfer(transferFrom);
         // return true;
     };
 
@@ -262,6 +267,8 @@ actor class VODAO() = this {
 
     public shared ({ caller }) func getAddress() : async AccountIdentifier {
       // Returns a account derived from the canister's Principal and a subaccount. The subaccount is being derived from the caller's Principal.
+      Debug.print("caller getAddress");
+      Debug.print(Principal.toText(caller));
       let principalCanister = await idQuick();
       let subAcccount = await principalToSubaccount(caller);
       return await accountIdentifier(principalCanister, subAcccount);

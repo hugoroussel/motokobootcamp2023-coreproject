@@ -58,6 +58,27 @@ function Locking() {
     console.log("send", send)
   }
 
+  const handleUnlock = async (e) => {
+    e.preventDefault()
+    console.log("handleUnlock")
+    let send = await daoC.unlock()
+    console.log("send", send)
+  }
+
+
+  const balance = async (e) => {
+    e.preventDefault()
+    console.log("handleUnlock")
+    let princinpalCanister = await daoC.idQuick();
+    let subAccount = await daoC.getAddress();
+    let account = {
+      owner: princinpalCanister,
+      subaccount: [subAccount],
+    }
+    let balance = await mbtC.icrc1_balance_of(account)
+    console.log("balance", balance)
+  }
+
   return (
     <div className="bg-white">
       <Navbar/>
@@ -87,6 +108,22 @@ function Locking() {
           onClick={handleNewLock}
           >
           Lock
+          </button>
+          &nbsp;&nbsp;&nbsp;&nbsp;
+          <button
+          type="button"
+          className="inline-flex items-center rounded border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          onClick={handleUnlock}
+          >
+          UnLock
+          </button>
+          &nbsp;&nbsp;&nbsp;&nbsp;
+          <button
+          type="button"
+          className="inline-flex items-center rounded border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          onClick={balance}
+          >
+          Balance
           </button>
         </div>
       </div>
