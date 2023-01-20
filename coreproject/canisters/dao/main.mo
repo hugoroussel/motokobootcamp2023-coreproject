@@ -10,6 +10,7 @@ import Nat8 "mo:base/Nat8";
 import Nat32 "mo:base/Nat32";
 import Nat64 "mo:base/Nat64";
 import Int "mo:base/Int";
+import Float "mo:base/Float";
 import Blob "mo:base/Blob";
 // Base identity
 import Principal "mo:base/Principal";
@@ -155,6 +156,7 @@ actor class VODAO() = this {
         dissolveDelay: Int;
         neuronState: NeuronState;
         createdAt: Int;
+        dissolvedAt: Int;
         depositSubaccount: Types.Subaccount;
     };
 
@@ -171,10 +173,22 @@ actor class VODAO() = this {
         if(Principal.isAnonymous(caller)) {
             return #CommonError(#GenericError {message = "Anonymous caller"});
         };
-        // TODO : can re-init if the neuron is dissolved?
         // check if the neuron already exists
-        if(neurons.get(caller) != null){
-            return #CommonError(#GenericError {message = "Neuron already exists"});
+        let mapEntry = neurons.get(caller);
+        switch (mapEntry) {
+            case (null) {
+                // neuron does not exist all good
+            };
+            case(?neuron) {
+                // neuron already exists
+                // return #CommonError(#GenericError {message = "Neuron already exists"});
+                if(neuron.neuronState == #Dissolved){
+                    // neuron is dissolved, we can re-init it
+                } else {
+                    // neuron is not dissolved, we cannot re-init it
+                    return #CommonError(#GenericError {message = "Neuron already exists"});
+                };
+            };
         };
         // check if the caller deposited enough tokens
         let canisterPrincipal = await idQuick();
@@ -196,13 +210,13 @@ actor class VODAO() = this {
             dissolveDelay = dissolveDelay;
             neuronState = #Locked;
             createdAt = Time.now();
+            dissolvedAt = 0;
             depositSubaccount : Types.Subaccount = callerSubAccount;
         };
         // add the neuron to the map
         neurons.put(caller, neuron);
         return #Ok(true);
     };
-
 
     public shared ({caller}) func dissolveNeuron() : async (Bool) {
         // no anonymous caller
@@ -222,6 +236,7 @@ actor class VODAO() = this {
                             dissolveDelay = neuron.dissolveDelay;
                             neuronState = #Dissolving;
                             createdAt = neuron.createdAt;
+                            dissolvedAt = Time.now();
                             depositSubaccount = neuron.depositSubaccount;
                         };
                         neurons.put(caller, updatedNeuron);
@@ -229,31 +244,7 @@ actor class VODAO() = this {
                     };
                     case(#Dissolving){
                         if(neuron.createdAt+neuron.dissolveDelay < Time.now()){
-                            // neuron is ready to be dissolved and funds returned to the user
-                            let updatedNeuron = {
-                                owner = neuron.owner;
-                                amount = neuron.amount;
-                                dissolveDelay = neuron.dissolveDelay;
-                                neuronState = #Dissolved;
-                                createdAt = neuron.createdAt;
-                                depositSubaccount = neuron.depositSubaccount;
-                            };
-                            neurons.put(caller, updatedNeuron);
-                            // get the current balance of the neuron
-                            let canisterPrincipal = await idQuick();
-                            let depositAccount = {owner = canisterPrincipal; subaccount = ?neuron.depositSubaccount};
-                            let balance = await _getBalance(depositAccount);
-                            // send back the tokens to the user
-                            let transferParameters = {
-                                from_subaccount = ?neuron.depositSubaccount;
-                                to = {owner = caller; subaccount = null};
-                                amount = balance;
-                                fee = null;
-                                memo = null;
-                                created_at_time = null;
-                            };
-                            let res = await mbt.icrc1_transfer(transferParameters);
-                            return true;
+                         return await _dissolveNeuron(caller, neuron);
                         } else {
                             // neuron is not ready to be dissolved
                             return false;
@@ -267,6 +258,82 @@ actor class VODAO() = this {
             };
         };
         return true;
+    };
+
+    private func _dissolveNeuron(caller : Principal, neuron : Neuron) : async (Bool) {
+           // neuron is ready to be dissolved and funds returned to the user
+        let updatedNeuron = {
+            owner = neuron.owner;
+            amount = neuron.amount;
+            dissolveDelay = neuron.dissolveDelay;
+            neuronState = #Dissolved;
+            createdAt = neuron.createdAt;
+            dissolvedAt = neuron.dissolvedAt;
+            depositSubaccount = neuron.depositSubaccount;
+        };
+        neurons.put(caller, updatedNeuron);
+        // get the current balance of the neuron
+        let canisterPrincipal = await idQuick();
+        let depositAccount = {owner = canisterPrincipal; subaccount = ?neuron.depositSubaccount};
+        let balance = await _getBalance(depositAccount);
+        // send back the tokens to the user
+        let transferParameters = {
+            from_subaccount = ?neuron.depositSubaccount;
+            to = {owner = caller; subaccount = null};
+            amount = balance;
+            fee = null;
+            memo = null;
+            created_at_time = null;
+        };
+        let res = await mbt.icrc1_transfer(transferParameters);
+        return true;
+    };
+
+    public func getNeuronVotingPower(neuron : Neuron) : async Float {
+        let canisterPrincipal = await idQuick();
+        let depositAccount = {owner = canisterPrincipal; subaccount = ?neuron.depositSubaccount};
+        let balance = await _getBalance(depositAccount);
+        let dissolveDelayInMonths = await nanoSecondsToMonths(neuron.dissolveDelay);
+        if(neuron.neuronState == #Dissolved){
+            return 0;
+        };
+        if(neuron.neuronState == #Dissolving){
+            let ageInMonths = await nanoSecondsToMonths(Time.now()-neuron.createdAt);
+            let dissolveDelayInMonths = await nanoSecondsToMonths(Time.now() - neuron.dissolvedAt);
+            var bonusAge : Float = await getAgeBonus(ageInMonths);
+            var bonusDD : Float = await getDissolveBonus(dissolveDelayInMonths);
+            return Float.fromInt(balance) * bonusAge * bonusDD;
+        };
+        if(neuron.neuronState == #Locked){
+            let ageInMonths = await nanoSecondsToMonths(Time.now()-neuron.createdAt);
+            let dissolveDelayInMonths = await nanoSecondsToMonths(neuron.dissolveDelay);
+            var bonusAge : Float = await getAgeBonus(ageInMonths);
+            var bonusDD : Float = await getDissolveBonus(dissolveDelayInMonths);
+            return Float.fromInt(balance) * bonusAge * bonusDD;
+        };
+        return 0;
+    };
+
+    public func getAgeBonus(ageInMonths : Float) : async Float {
+       if(ageInMonths >= 48){
+            return 1.25;
+        } else {
+            return 0.005*ageInMonths+1;
+        };
+    };
+
+    public func getDissolveBonus(dissolveDelayInMonths : Float) : async Float {
+        if (dissolveDelayInMonths < 6) {
+            return 1.0;
+        } else if (dissolveDelayInMonths > 6 and dissolveDelayInMonths < 48) {
+            return 0.01*dissolveDelayInMonths+0.997;
+        } else {
+            return 2.0;
+        };
+    };
+
+    public func nanoSecondsToMonths(nanoSeconds : Int) : async Float {
+        return Float.fromInt(nanoSeconds) / 2628000000000000;
     };
 
 
