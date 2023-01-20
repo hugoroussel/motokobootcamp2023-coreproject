@@ -4,16 +4,32 @@ import List "mo:base/List";
 module {
 
     // Dao types
-    type ProposalStatus = {
+    public type ProposalStatus = {
         #OnGoing;
         #Rejected;
         #Accepted;
     };
 
+    public type ProposalType = {
+        #Standard;
+        #MinimumChange : MinimumChange;
+        #ThresholdChange : ThresholdChange;
+        #ToggleQuadraticVoting;
+    };
+
+    public type MinimumChange = {
+        newMinimum: Float;
+    };
+
+    public type ThresholdChange = {
+        newThreshold: Float;
+    };
+
     public type Proposal = {
         id: Nat64;
+        proposalType: ProposalType;
         proposalText: Text;
-        numberOfVotes: Int;
+        numberOfVotes: Float;
         voters : List.List<Principal>;
         creator: Principal;
         status: ProposalStatus;

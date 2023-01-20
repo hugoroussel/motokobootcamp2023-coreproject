@@ -38,9 +38,12 @@ actor class VODAO() = this {
 
     // DAO parameters
     var daoName: Text = "VodaDao";
-    var thresholdAcceptance: Int = 100;
-    var thresholdRejection: Int = -100;
     var timeLastUpdated : Int = 0;
+
+    var thresholdAcceptance: Float = 100;
+    var thresholdRejection: Float = -thresholdAcceptance;
+    var minimumAmountOfVotingPower : Float = 1;
+    var quadraticVotingEnabled : Bool = false;
 
     // Proposals initialization and reinstantiation via stable memory
     func nat64Hash(n : Nat64) : Hash.Hash { 
@@ -59,6 +62,7 @@ actor class VODAO() = this {
     var lastPassedProposal : Types.Proposal = {
         id=0;
         proposalText = "Initial Proposal";
+        proposalType = #Standard;
         voters = List.nil<Principal>();
         numberOfVotes = 0;
         creator = Principal.fromText("qdaue-mb5vz-iszz7-w5r7p-o6t2d-fit3j-rwvzx-77nt4-jmqj7-z27oa-2ae");
@@ -67,17 +71,132 @@ actor class VODAO() = this {
     };
 
     // Submit a proposal to the DAO
-    public shared ({caller}) func submit_proposal(proposalText : Text) : async Bool {
+    public shared ({caller}) func submit_proposal(proposalText : Text, proposalType : Types.ProposalType) : async Bool {
         // Checks
         // assert await _checks(caller);
         var time = Time.now();
         // TODO : check if the proposal is not already in the DAO
-        let proposal = {id=id; proposalText = proposalText; voters = List.nil<Principal>(); numberOfVotes = 0; creator = caller; status = #OnGoing; time = time};
+        let proposal : Types.Proposal = {
+            id=id;
+            proposalText = proposalText;
+            proposalType=proposalType; voters = List.nil<Principal>(); numberOfVotes = 0; creator = caller; status = #OnGoing; time = time};
         proposals.put(id, proposal);
         id += 1;
         return true;
     };
 
+
+    public shared ({caller}) func vote2(id : Nat64, upvote : Bool) : async Result<(Bool), CommonError> {
+        // check caller is not anonymous
+        if(Principal.isAnonymous(caller)) {
+            return #CommonError(#GenericError {message = "Anonymous caller"});
+        };
+        // check the voter voting power
+        let neuron = neurons.get(caller);
+        var votingPower : Float = 0;
+        switch(neuron){
+            case(null){
+                return #CommonError(#GenericError {message = "Voter has did not create a neuron"});
+            };
+            case(?neuron){
+                    votingPower := await getNeuronVotingPower(neuron);
+                }
+        };
+        let finalVotingPower = await normalizeVotingPower(votingPower);
+        if(finalVotingPower < minimumAmountOfVotingPower){
+            return #CommonError(#GenericError {message = "Voter has not enough voting power"});
+        };
+        // check if the proposal exists
+        let proposal = proposals.get(id);
+        switch(proposal){
+            case(null){
+                return #CommonError(#GenericError {message = "Proposal does not exist"});
+            };
+            case(?proposal){
+                let hasVoted : ?Principal = List.find<Principal>(proposal.voters, func x = Principal.toText(x) == Principal.toText(caller));
+                switch(hasVoted){
+                    case(null){};
+                    case(?hasVoted){
+                        return #CommonError(#GenericError {message = "User already voted on this proposal"});
+                    };
+                };
+                var newNumberOfVotes : Float = 0;
+                if (upvote){
+                    newNumberOfVotes := proposal.numberOfVotes+finalVotingPower;
+                } else {
+                    newNumberOfVotes := proposal.numberOfVotes-finalVotingPower;
+                };
+                let newVoters : List.List<Principal> = List.push(caller, proposal.voters);
+                switch(proposal.proposalType){
+                    case(#Standard){
+                        if(newNumberOfVotes>=thresholdAcceptance){
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType;voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
+                            lastPassedProposal := updatedProposal;
+                            await webpage.set_last_proposal(lastPassedProposal.proposalText);
+                            proposals.put(proposal.id, updatedProposal);
+                        } else if (newNumberOfVotes<=thresholdRejection){
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
+                            proposals.put(proposal.id, updatedProposal);
+                        } else {
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
+                            proposals.put(proposal.id, updatedProposal);
+                        };
+                        return #Ok(true);
+                    };
+                    case(#MinimumChange(args)){
+                        if(newNumberOfVotes>=thresholdAcceptance){
+                            minimumAmountOfVotingPower := args.newMinimum;
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType;voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
+                            lastPassedProposal := updatedProposal;
+                            await webpage.set_last_proposal(lastPassedProposal.proposalText);
+                            proposals.put(proposal.id, updatedProposal);
+                        } else if (newNumberOfVotes<=thresholdRejection){
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
+                            proposals.put(proposal.id, updatedProposal);
+                        } else {
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
+                            proposals.put(proposal.id, updatedProposal);
+                        };
+                        return #Ok(true);
+                    };
+                    case(#ThresholdChange(args)){
+                         if(newNumberOfVotes>=thresholdAcceptance){
+                            thresholdAcceptance := args.newThreshold;
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType;voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
+                            lastPassedProposal := updatedProposal;
+                            await webpage.set_last_proposal(lastPassedProposal.proposalText);
+                            proposals.put(proposal.id, updatedProposal);
+                        } else if (newNumberOfVotes<=thresholdRejection){
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
+                            proposals.put(proposal.id, updatedProposal);
+                        } else {
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
+                            proposals.put(proposal.id, updatedProposal);
+                        };
+                        return #Ok(true);
+                    };
+                    case(#ToggleQuadraticVoting){
+                        if(newNumberOfVotes>=thresholdAcceptance){
+                            quadraticVotingEnabled := not quadraticVotingEnabled;
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType;voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
+                            lastPassedProposal := updatedProposal;
+                            await webpage.set_last_proposal(lastPassedProposal.proposalText);
+                            proposals.put(proposal.id, updatedProposal);
+                        } else if (newNumberOfVotes<=thresholdRejection){
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
+                            proposals.put(proposal.id, updatedProposal);
+                        } else {
+                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
+                            proposals.put(proposal.id, updatedProposal);
+                        };
+                        return #Ok(true);
+                    };
+                };
+            }
+        }
+    };
+
+    /*
     // Vote on a proposal, if upvote is true the vote will be positive (currentAmountOfVotes + balance), if false the vote will be negative (currentAmountOfVotes - balance)
     public shared ({caller}) func vote(id : Nat64, upvote : Bool) : async Bool {
         // Standard Identity Checks
@@ -117,21 +236,22 @@ actor class VODAO() = this {
                 Debug.print(Int.toText(newNumberOfVotes));
                 let newVoters : List.List<Principal> = List.push(caller, proposal.voters);
                 if(newNumberOfVotes>=thresholdAcceptance){
-                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
+                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType;voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
                     lastPassedProposal := updatedProposal;
                     await webpage.set_last_proposal(lastPassedProposal.proposalText);
                     proposals.put(proposal.id, updatedProposal);
                 } else if (newNumberOfVotes<=thresholdRejection){
-                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
+                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
                     proposals.put(proposal.id, updatedProposal);
                 } else {
-                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
+                    var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
                     proposals.put(proposal.id, updatedProposal);
                 };
                 return true;
             };
         };   
     };
+    */
 
     // Time
     public shared func getTime() : async Int {
@@ -287,6 +407,14 @@ actor class VODAO() = this {
         };
         let res = await mbt.icrc1_transfer(transferParameters);
         return true;
+    };
+
+    public func normalizeVotingPower(votingPower : Float) : async Float {
+        let normalizedVotingPower = votingPower / 100000000;
+        if (quadraticVotingEnabled) {
+            return Float.sqrt(normalizedVotingPower);
+        };
+        return normalizedVotingPower;
     };
 
     public func getNeuronVotingPower(neuron : Neuron) : async Float {
