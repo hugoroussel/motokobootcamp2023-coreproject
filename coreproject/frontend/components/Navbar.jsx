@@ -36,14 +36,11 @@ const Navbar = () => {
         <>
           <div className="mx-auto max-w-7xl px-2 sm:px-6 lg:px-8">
                 <div className='grid grid-cols-12 mt-3 gap-3'>
-                    <div className='col-span-3 text-md mt-3 font-bold'>
-                        {wallet ? 
-                        mbtBalance.toLocaleString() + ' MBT' 
-                        : '0 MBT'}
-                    </div>
-                    <div className='col-span-7 mt-3 text-md font-bold flex'>
-                        <HomeIcon className='h-6 w-6 ml-96'/>
+                    <div className='col-span-3 text-md mt-3 font-bold flex'>
+                        <HomeIcon className='h-6 w-6'/>
                         <Link to="/">Home</Link>
+                    </div>
+                    <div className='col-span-7 mt-3 text-md font-bold flex ml-96'>
                         &nbsp;&nbsp;&nbsp;&nbsp;
                         <PlusIcon className='h-6 w-6'/>
                         <Link to="/new">New proposal</Link>

@@ -1,6 +1,6 @@
 import { useCanister } from "@connect2ic/react"
 import React, { useEffect, useState } from "react"
-import { BeakerIcon, ArrowCircleDownIcon, ArrowCircleUpIcon } from '@heroicons/react/solid'
+import { ArrowDownIcon, ArrowUpIcon } from '@heroicons/react/solid'
 
 const Proposals = () => {
   /*
@@ -35,7 +35,7 @@ const Proposals = () => {
   }
 
   const refreshDaoProposals = async () => {
-    const freshDaoProposals = await daoC.get_all_proposals()
+    const freshDaoProposals = await daoC.getAllProposals()
     console.log("getting dao proposals", freshDaoProposals)
     let freshA = []
     let freshR = []
@@ -88,7 +88,7 @@ const Proposals = () => {
         <h3 className="text-lg font-medium leading-6 text-gray-900">
           <button
             type="button"
-            className="inline-flex items-center px-3 py-1.5 border border-transparent text-md font-medium rounded-full text-indigo-800"
+            className="inline-flex items-center px-3 py-1.5 border border-transparent text-2xl rounded-full text-gray-700 hover:text-gray-900"
             onClick={(e)=>{e.preventDefault();toggleModal("ongoing")}}
           >
           Ongoing
@@ -100,7 +100,7 @@ const Proposals = () => {
         <h3 className="text-lg font-medium leading-6 text-gray-900">
         <button
             type="button"
-            className="inline-flex items-center px-3 py-1.5 border border-transparent text-md font-medium rounded-full text-green-800"
+            className="inline-flex items-center px-3 py-1.5 border border-transparent text-2xl font-semibold rounded-full text-gray-700 hover:text-gray-900"
             onClick={(e)=>{e.preventDefault();toggleModal("accepted")}}
           >
           Accepted
@@ -112,7 +112,7 @@ const Proposals = () => {
         <h3 className="text-lg font-medium leading-6 text-gray-900">
           <button
               type="button"
-              className="inline-flex items-center px-3 py-1.5 border border-transparent text-md font-medium rounded-full text-red-800"
+              className="inline-flex items-center px-3 py-1.5 border border-transparent text-2xl font-extralight rounded-full text-gray-700 hover:text-gray-900"
               onClick={(e)=>{e.preventDefault();toggleModal("rejected")}}
             >
             Rejected
@@ -127,7 +127,7 @@ const Proposals = () => {
                   <div>ID : {Number(item.id)}</div>
                 </div>
                 <div className="col-span-4">
-                  <div className="font-bold">Proposal Text : {item.proposalText}</div>
+                  <div className="font-bold">{item.proposalText}</div>
                   <div>Votes : {Number(item.numberOfVotes)}</div>
                   <div>Status : {Object.keys(item.status)[0]}</div>   
                 </div>
@@ -139,7 +139,7 @@ const Proposals = () => {
                   <div>ID : {Number(item.id)}</div>
                 </div>
                 <div className="col-span-4">
-                  <div className="font-bold">Proposal Text : {item.proposalText}</div>
+                  <div className="font-bold">{item.proposalText}</div>
                   <div>Votes : {Number(item.numberOfVotes)}</div>
                   <div>Status : {Object.keys(item.status)[0]}</div>   
                 </div>
@@ -149,15 +149,15 @@ const Proposals = () => {
               <div className="grid grid-cols-5 border-2 border-solid rounded-md p-1 hover:bg-slate-100" key={item.id}>
                 <div className="col-span-1">
                   <button onClick={(e) => handleVote(e, item.id, true)}>
-                    <ArrowCircleUpIcon className="h-10 w-10 text-blue-500"/>
+                    <ArrowUpIcon className="h-6 w-6"/>
                   </button>
                   <button onClick={(e) => handleVote(e, item.id, false)}>
-                    <ArrowCircleDownIcon className="h-10 w-10 text-red-500"/>
+                    <ArrowDownIcon className="h-6 w-6"/>
                   </button>
                   <div>ID : {Number(item.id)}</div>
                 </div>
                 <div className="col-span-4">
-                  <div className="font-bold">Proposal Text : {item.proposalText}</div>
+                  <div className="font-bold">{item.proposalText}</div>
                   <div>Votes : {Number(item.numberOfVotes)}</div>
                   <div>Time : {(new Date(Number(item.time/BigInt(1000000000))*1000)).toString().substring(3,24)}</div>
                 </div>

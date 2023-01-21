@@ -1,7 +1,7 @@
-import React, {useEffect} from "react"
+import React, {useEffect, useState} from "react"
 import { createClient } from "@connect2ic/core"
 import { defaultProviders } from "@connect2ic/core/providers"
-import { Connect2ICProvider} from "@connect2ic/react"
+import { Connect2ICProvider, useWallet} from "@connect2ic/react"
 import "@connect2ic/core/style.css"
 import * as dao from "../.dfx/local/canisters/dao"
 import * as mbt from "../.dfx/local/canisters/mbt"
@@ -9,36 +9,44 @@ import "./index.css"
 import {Navbar} from "./components/Navbar"
 import { useCanister } from "@connect2ic/react"
 import { Principal } from '@dfinity/principal';
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import { LightningBoltIcon } from '@heroicons/react/solid'
+
+
 
 
 function Locking() {
 
   const [daoC] = useCanister("dao")
   const [mbtC] = useCanister("mbt")
-  const handleNewApprove = async (e) => {
+
+  const [wallet] = useWallet()
+
+  const [balance, setBalance] = useState(0)
+  const [neuron, setNeuron] = useState(0)
+  const [neuronState, setNeuronState] = useState()
+  const [startDate, setStartDate] = useState(new Date());
+  const [votingPower, setVotingPower] = useState(0);
+
+  const handleDissolve = async (e) => {
     e.preventDefault()
-    let expireTimestap = BigInt.asIntN(64, BigInt(Math.floor(Date.now()*1000000+100000000*10)));
-    console.log("expireTimestap", expireTimestap)
-    const hello = {
-        from_subaccount: [],
-        spender: Principal.fromText(
-            'rkp4c-7iaaa-aaaaa-aaaca-cai'
-        ),
-        amount: 100000000,
-        expires_at: [expireTimestap],
-        memo: [],
-        fee:[],
-        created_at_time: [],
-    }
-    console.log("objectCall", hello)
-    let res = await mbtC.icrc2_approve(hello);
-    console.log("res approve", res)
-    // refreshDaoProposals()
+    let res = await daoC.dissolveNeuron()
+    console.log("res", res)
   }
 
-  const handleNewLock = async (e) => {
-    console.log("handleNewLock")
+  const handleNewCreateNeuron = async (e) => {
+    let amount = document.getElementById("amount").value
+    let res = await daoC.createNeuron(amount*100000000, 1)
+    console.log("res", res)
+    refreshBalance()
+  }
+
+  const handleNewTransfer = async (e) => {
     e.preventDefault()
+    console.log("handle new transfer")
+    let amount = document.getElementById("amount").value
+    console.log("amount", amount)
     let subAccount = await daoC.getAddress();
     console.log("subAccount", subAccount)
     let princinpalCanister = await daoC.idQuick();
@@ -48,7 +56,7 @@ function Locking() {
         owner : princinpalCanister,
         subaccount : [subAccount],
       },
-      amount: 100000000,
+      amount: amount*100000000,
       fee: [],
       memo: [],
       created_at_time: [],
@@ -56,34 +64,42 @@ function Locking() {
     console.log("transferParameters", transferParameters)
     let send = await mbtC.icrc1_transfer(transferParameters)
     console.log("send", send)
+    refreshBalance()
   }
 
-  const handleUnlock = async (e) => {
-    e.preventDefault()
-    console.log("handleUnlock")
-    let send = await daoC.unlock()
-    console.log("send", send)
-  }
-
-
-  const balance = async (e) => {
-    e.preventDefault()
-    console.log("handleUnlock")
-    let princinpalCanister = await daoC.idQuick();
-    let subAccount = await daoC.getAddress();
-    let account = {
-      owner: princinpalCanister,
-      subaccount: [subAccount],
+  const refreshBalance = async () => {
+    if (wallet?.principal){
+      let account = {owner : Principal.fromText(wallet.principal), subaccount : []}
+      const freshMbtBalance = await daoC._getBalance(account)
+      console.log("freshMbtBalance", freshMbtBalance)
+      setBalance(Number(freshMbtBalance/BigInt(100000000)))
     }
-    let balance = await mbtC.icrc1_balance_of(account)
-    console.log("balance", balance)
   }
 
-  const handleCreateNeuron = async (e) => {
-    e.preventDefault()
-    console.log("handle get time")
-    let time = await daoC.createNeuron(100000000,0);
+  const refreshNeuron = async () => {
+    if (wallet?.principal){
+      let account = Principal.fromText(wallet.principal)
+      const freshNeuron = await daoC.getNeuron(account)
+      setNeuron(freshNeuron)
+      if(!(Array.isArray(freshNeuron) && freshNeuron.length === 0)){
+        setNeuron(freshNeuron[0])
+        let ns = Object.keys(freshNeuron[0]?.neuronState)[0]
+        if(ns==="Dissolved"){
+          setNeuron([])
+        }
+        setNeuronState(ns)
+        console.log("neur", freshNeuron[0])
+        let res = await daoC.getNeuronVotingPower(freshNeuron[0])
+        console.log("voting power", res)
+        setVotingPower(res)
+      }
+    }
   }
+
+  useEffect(() => {
+    refreshBalance()
+    refreshNeuron()
+  }, [wallet])
 
   return (
     <div className="bg-white">
@@ -96,49 +112,89 @@ function Locking() {
           <p className="mx-auto mt-5 max-w-xl text-xl text-gray-500">
             Leverage time for more influence.
           </p>
+          <p className="mx-auto mt-5 max-w-xl text-xl font-bold">
+            MBT balance: {balance}
+          </p>
+          <br/>
+          {Array.isArray(neuron) && neuron.length === 0 ?
+           (
+            <div className="container overflow-hidden rounded-lg bg-white shadow w-1/2">
+              <div className="px-4 py-5 sm:p-6 text-xl font-bold">
+                Lock MBT now to create a neuron.
+              </div>
+              <div>
+                <label htmlFor="price" className="block text-sm font-medium text-gray-700">
+                  Amount of MBTs to Lock
+                </label>
+                <div className="relative mt-1 rounded-md shadow-sm w-1/3 container">
+                  <input
+                    type="number"
+                    name="amount"
+                    id="amount"
+                    className="block w-full rounded-md border-gray-300 pl-7 pr-12 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="0.00"
+                    aria-describedby="price-currency"
+                  />
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                    <span className="text-gray-500 sm:text-sm" id="price-currency">
+                      MBT
+                    </span>
+                  </div>
+                </div>
+                <br/>
+                <label htmlFor="price" className="block text-sm font-medium text-gray-700">
+                  Choose a dissolve delay <br/>(chosen date - today's date = delay)
+                </label>
+                <DatePicker selected={startDate} onChange={(date) => setStartDate(date)} />
+                <br/>
+                <br/>
+                <button
+                  type="button"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-full shadow-sm text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  onClick={handleNewTransfer}
+                >
+                Deposit
+                </button>
+                &nbsp;&nbsp;&nbsp;&nbsp;
+                <button
+                  type="button"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-full shadow-sm text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
+                  onClick={handleNewCreateNeuron}
+                >
+                Lock
+                </button>
+                <br/>
+                <br/>
+              </div>
+            </div>
+           ) :
+           (
+            <div className="container overflow-hidden rounded-lg bg-white shadow w-1/2">
+              <div className="px-4 py-5 sm:p-6 text-xl font-bold">
+              <LightningBoltIcon className="h-12 w-12 text-center container"/>
+              <br/>
+               Neuron State {neuronState}
+              </div>
+              <div className="px-4 py-5 sm:p-6 text-xl font-bold">
+                Neuron balance {Number(neuron?.amount)/100000000}
+              </div>
+              <div className="px-4 py-5 sm:p-6 text-xl font-bold">
+                Neuron Voting Power {votingPower/100000000}
+              </div>
+              <button
+                  type="button"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-full shadow-sm text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
+                  onClick={handleDissolve}
+                >
+                Dissolve
+              </button>
+              <br/>
+              <br/>
+            </div>
+           )}
           <br/>
           <br/>
           <br/>
-
-          <button
-          type="button"
-          className="inline-flex items-center rounded border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-          onClick={handleNewApprove}
-          >
-          Approve
-          </button>
-          &nbsp;&nbsp;&nbsp;&nbsp;
-          <button
-          type="button"
-          className="inline-flex items-center rounded border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-          onClick={handleNewLock}
-          >
-          Lock
-          </button>
-          &nbsp;&nbsp;&nbsp;&nbsp;
-          <button
-          type="button"
-          className="inline-flex items-center rounded border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-          onClick={handleUnlock}
-          >
-          UnLock
-          </button>
-          &nbsp;&nbsp;&nbsp;&nbsp;
-          <button
-          type="button"
-          className="inline-flex items-center rounded border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-          onClick={balance}
-          >
-          Balance
-          </button>
-          &nbsp;&nbsp;&nbsp;&nbsp;
-          <button
-          type="button"
-          className="inline-flex items-center rounded border border-transparent bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-          onClick={handleCreateNeuron}
-          >
-          Create Neuron
-          </button>
         </div>
       </div>
     </div>

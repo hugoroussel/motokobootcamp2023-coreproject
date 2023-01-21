@@ -69,7 +69,7 @@ actor class VODAO() = this {
     };
 
     // Submit a proposal to the DAO
-    public shared ({caller}) func submit_proposal(proposalText : Text, proposalType : Types.ProposalType) : async Types.DaoResult<(Bool), Types.CommonDaoError> {
+    public shared ({caller}) func submitProposal(proposalText : Text, proposalType : Types.ProposalType) : async Types.DaoResult<(Bool), Types.CommonDaoError> {
         // Check if caller is not anonymous
         if(Principal.isAnonymous(caller)) {
             return #CommonDaoError(#GenericError {message = "Anonymous caller"});
@@ -138,6 +138,9 @@ actor class VODAO() = this {
                     switch(proposal.proposalType){
                     case(#Standard){};
                     case(#MinimumChange(args)){
+                        if(args.newMinimum<=0){
+                            return #CommonDaoError(#GenericError {message = "Minimum amount of voting power cannot be negative or null"});
+                        };
                         minimumAmountOfVotingPower := args.newMinimum;
                     };
                     case(#ThresholdChange(args)){
@@ -188,10 +191,9 @@ actor class VODAO() = this {
         let callerSubAccount : Types.Subaccount =  await Helpers.accountIdentifier(canisterPrincipal, await Helpers.principalToSubaccount(caller));
         let depositAccount = {owner = canisterPrincipal; subaccount = ?callerSubAccount};
         let balance = await _getBalance(depositAccount);
-        if(amount < balance){
+        if(amount > balance){
             // user did not deposit enough :(
             return #CommonDaoError(#GenericError {message = "Not enough tokens deposited"});
-
         };
         // create the neuron
         let neuron = {
@@ -338,14 +340,25 @@ actor class VODAO() = this {
     
     // Returns a account derived from the canister's Principal and a subaccount. The subaccount is being derived from the caller's Principal.
     public shared ({ caller }) func getAddress() : async Types.Subaccount {
-      Debug.print("caller getAddress");
-      Debug.print(Principal.toText(caller));
       let principalCanister = await idQuick();
       let subAcccount = await Helpers.principalToSubaccount(caller);
       return await Helpers.accountIdentifier(principalCanister, subAcccount);
     };
 
     // Getters
+
+    public func getMinimumVotingPower() : async Float {
+        return minimumAmountOfVotingPower;
+    };
+
+    public func getThreshold() : async Float {
+        return thresholdAcceptance;
+    };
+
+    public func getQuadraticVotingEnabled() : async Bool {
+        return quadraticVotingEnabled;
+    };
+
 
     public func getLastPassedProposal() : async Text {
         return lastPassedProposal.proposalText;
