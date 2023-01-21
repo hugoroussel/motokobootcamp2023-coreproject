@@ -36,6 +36,29 @@ module {
         time: Int;
     };
 
+    // Neurons types
+    public type NeuronState = {
+        #Locked;
+        #Dissolving;
+        #Dissolved;
+    };
+
+    public type Neuron = {
+        owner: Principal;
+        amount: Nat;
+        dissolveDelay: Int;
+        neuronState: NeuronState;
+        createdAt: Int;
+        dissolvedAt: Int;
+        depositSubaccount: Subaccount;
+    };
+
+    public type CommonDaoError = {
+        #GenericError : {message : Text };
+    };
+
+    public type DaoResult<T, E> = { #Ok : T; #CommonDaoError : E };
+
     // Everything related to calling the MB token.
     public type Account = { owner : Principal; subaccount : ?Subaccount };
     public type Tokens = Nat;

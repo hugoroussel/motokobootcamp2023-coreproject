@@ -38,8 +38,6 @@ actor class VODAO() = this {
 
     // DAO parameters
     var daoName: Text = "VodaDao";
-    var timeLastUpdated : Int = 0;
-
     var thresholdAcceptance: Float = 100;
     var thresholdRejection: Float = -thresholdAcceptance;
     var minimumAmountOfVotingPower : Float = 1;
@@ -54,8 +52,8 @@ actor class VODAO() = this {
     let proposals = HashMap.fromIter<Nat64, Types.Proposal>(proposalEntries.vals(), Iter.size(proposalEntries.vals()), Nat64.equal, nat64Hash);
 
     // Neurons initialization and reinstantiation via stable memory
-    stable var neuronsEntries : [(Principal, Neuron)] = [];
-    let neurons = HashMap.fromIter<Principal, Neuron>(neuronsEntries.vals(), Iter.size(neuronsEntries.vals()), Principal.equal, Principal.hash);
+    stable var neuronsEntries : [(Principal, Types.Neuron)] = [];
+    let neurons = HashMap.fromIter<Principal, Types.Neuron>(neuronsEntries.vals(), Iter.size(neuronsEntries.vals()), Principal.equal, Principal.hash);
 
     // The lastPassedProposal variable is the one reflected on the webpage canister and fully controlled by the dao. 
     // It is updated every time a proposal is accepted.
@@ -71,32 +69,40 @@ actor class VODAO() = this {
     };
 
     // Submit a proposal to the DAO
-    public shared ({caller}) func submit_proposal(proposalText : Text, proposalType : Types.ProposalType) : async Bool {
-        // Checks
-        // assert await _checks(caller);
-        var time = Time.now();
-        // TODO : check if the proposal is not already in the DAO
-        let proposal : Types.Proposal = {
-            id=id;
-            proposalText = proposalText;
-            proposalType=proposalType; voters = List.nil<Principal>(); numberOfVotes = 0; creator = caller; status = #OnGoing; time = time};
-        proposals.put(id, proposal);
-        id += 1;
-        return true;
+    public shared ({caller}) func submit_proposal(proposalText : Text, proposalType : Types.ProposalType) : async Types.DaoResult<(Bool), Types.CommonDaoError> {
+        // Check if caller is not anonymous
+        if(Principal.isAnonymous(caller)) {
+            return #CommonDaoError(#GenericError {message = "Anonymous caller"});
+        };
+        let neuron = neurons.get(caller);
+        switch(neuron){
+            case(null){
+                return #CommonDaoError(#GenericError {message = "Caller has did not create a neuron"});
+            };
+            case(?neuron){
+                 // assert await _checks(caller);
+                var time = Time.now();
+                // TODO : check if the proposal is not already in the DAO
+                let proposal : Types.Proposal = {id=id; proposalText = proposalText; proposalType=proposalType; voters = List.nil<Principal>(); numberOfVotes = 0; creator = caller; status = #OnGoing; time = time};
+                proposals.put(id, proposal);
+                id += 1;
+                #Ok(true);
+            };
+        };
     };
 
-
-    public shared ({caller}) func vote2(id : Nat64, upvote : Bool) : async Result<(Bool), CommonError> {
+    // Vote for a proposal
+    public shared ({caller}) func vote(id : Nat64, upvote : Bool) : async Types.DaoResult<(Bool), Types.CommonDaoError> {
         // check caller is not anonymous
         if(Principal.isAnonymous(caller)) {
-            return #CommonError(#GenericError {message = "Anonymous caller"});
+            return #CommonDaoError(#GenericError {message = "Anonymous caller"});
         };
         // check the voter voting power
         let neuron = neurons.get(caller);
         var votingPower : Float = 0;
         switch(neuron){
             case(null){
-                return #CommonError(#GenericError {message = "Voter has did not create a neuron"});
+                return #CommonDaoError(#GenericError {message = "Voter has did not create a neuron"});
             };
             case(?neuron){
                     votingPower := await getNeuronVotingPower(neuron);
@@ -104,20 +110,20 @@ actor class VODAO() = this {
         };
         let finalVotingPower = await normalizeVotingPower(votingPower);
         if(finalVotingPower < minimumAmountOfVotingPower){
-            return #CommonError(#GenericError {message = "Voter has not enough voting power"});
+            return #CommonDaoError(#GenericError {message = "Voter has not enough voting power"});
         };
         // check if the proposal exists
         let proposal = proposals.get(id);
         switch(proposal){
             case(null){
-                return #CommonError(#GenericError {message = "Proposal does not exist"});
+                return #CommonDaoError(#GenericError {message = "Proposal does not exist"});
             };
             case(?proposal){
                 let hasVoted : ?Principal = List.find<Principal>(proposal.voters, func x = Principal.toText(x) == Principal.toText(caller));
                 switch(hasVoted){
                     case(null){};
                     case(?hasVoted){
-                        return #CommonError(#GenericError {message = "User already voted on this proposal"});
+                        return #CommonDaoError(#GenericError {message = "User already voted on this proposal"});
                     };
                 };
                 var newNumberOfVotes : Float = 0;
@@ -127,186 +133,53 @@ actor class VODAO() = this {
                     newNumberOfVotes := proposal.numberOfVotes-finalVotingPower;
                 };
                 let newVoters : List.List<Principal> = List.push(caller, proposal.voters);
-                switch(proposal.proposalType){
-                    case(#Standard){
-                        if(newNumberOfVotes>=thresholdAcceptance){
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType;voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
-                            lastPassedProposal := updatedProposal;
-                            await webpage.set_last_proposal(lastPassedProposal.proposalText);
-                            proposals.put(proposal.id, updatedProposal);
-                        } else if (newNumberOfVotes<=thresholdRejection){
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
-                            proposals.put(proposal.id, updatedProposal);
-                        } else {
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
-                            proposals.put(proposal.id, updatedProposal);
-                        };
-                        return #Ok(true);
-                    };
+
+                if(newNumberOfVotes>=thresholdAcceptance){
+                    switch(proposal.proposalType){
+                    case(#Standard){};
                     case(#MinimumChange(args)){
-                        if(newNumberOfVotes>=thresholdAcceptance){
-                            minimumAmountOfVotingPower := args.newMinimum;
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType;voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
-                            lastPassedProposal := updatedProposal;
-                            await webpage.set_last_proposal(lastPassedProposal.proposalText);
-                            proposals.put(proposal.id, updatedProposal);
-                        } else if (newNumberOfVotes<=thresholdRejection){
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
-                            proposals.put(proposal.id, updatedProposal);
-                        } else {
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
-                            proposals.put(proposal.id, updatedProposal);
-                        };
-                        return #Ok(true);
+                        minimumAmountOfVotingPower := args.newMinimum;
                     };
                     case(#ThresholdChange(args)){
-                         if(newNumberOfVotes>=thresholdAcceptance){
-                            thresholdAcceptance := args.newThreshold;
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType;voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
-                            lastPassedProposal := updatedProposal;
-                            await webpage.set_last_proposal(lastPassedProposal.proposalText);
-                            proposals.put(proposal.id, updatedProposal);
-                        } else if (newNumberOfVotes<=thresholdRejection){
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
-                            proposals.put(proposal.id, updatedProposal);
-                        } else {
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
-                            proposals.put(proposal.id, updatedProposal);
-                        };
-                        return #Ok(true);
+                        thresholdAcceptance := args.newThreshold;
                     };
                     case(#ToggleQuadraticVoting){
-                        if(newNumberOfVotes>=thresholdAcceptance){
-                            quadraticVotingEnabled := not quadraticVotingEnabled;
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType;voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
-                            lastPassedProposal := updatedProposal;
-                            await webpage.set_last_proposal(lastPassedProposal.proposalText);
-                            proposals.put(proposal.id, updatedProposal);
-                        } else if (newNumberOfVotes<=thresholdRejection){
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
-                            proposals.put(proposal.id, updatedProposal);
-                        } else {
-                            var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
-                            proposals.put(proposal.id, updatedProposal);
-                        };
-                        return #Ok(true);
+                        quadraticVotingEnabled :=  not quadraticVotingEnabled;
                     };
-                };
-            }
-        }
-    };
-
-    /*
-    // Vote on a proposal, if upvote is true the vote will be positive (currentAmountOfVotes + balance), if false the vote will be negative (currentAmountOfVotes - balance)
-    public shared ({caller}) func vote(id : Nat64, upvote : Bool) : async Bool {
-        // Standard Identity Checks
-        // assert await _checks(caller);
-        // Check if the proposal exists
-        var proposal = proposals.get(id);
-        // Get user balance 
-        // let account = 
-        let balance = 0;// await _getBalance(Principal.toText(caller));
-        var newNumberOfVotes : Int = balance;
-        switch(proposal){
-            case(null){
-                return false;
-            };
-            case(?proposal){
-                if(proposal.status != #OnGoing){
-                    // Cannot vote on a proposal that is not ongoing
-                    assert false;
-                };
-                // check if the user has already voted
-                let hasVoted : ?Principal = List.find<Principal>(proposal.voters, func x = Principal.toText(x) == Principal.toText(caller));
-                switch(hasVoted){
-                    case(null){
-                        // User has not voted yet
                     };
-                    case(?hasVoted){
-                        // User has already voted
-                        assert false;
-                        // return false;
-                    };
-                };
-                if (upvote){
-                    newNumberOfVotes := proposal.numberOfVotes+balance;
-                } else {
-                    newNumberOfVotes := proposal.numberOfVotes-balance;
-                };
-                Debug.print(Int.toText(newNumberOfVotes));
-                let newVoters : List.List<Principal> = List.push(caller, proposal.voters);
-                if(newNumberOfVotes>=thresholdAcceptance){
                     var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType;voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Accepted; time = proposal.time};
                     lastPassedProposal := updatedProposal;
                     await webpage.set_last_proposal(lastPassedProposal.proposalText);
                     proposals.put(proposal.id, updatedProposal);
+                    return #Ok(true);
                 } else if (newNumberOfVotes<=thresholdRejection){
                     var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #Rejected; time = proposal.time};
                     proposals.put(proposal.id, updatedProposal);
+                    return #Ok(true);
                 } else {
                     var updatedProposal = {id=proposal.id; proposalText = proposal.proposalText; proposalType = proposal.proposalType; voters = newVoters; numberOfVotes = newNumberOfVotes; creator = proposal.creator; status = #OnGoing; time = proposal.time};
                     proposals.put(proposal.id, updatedProposal);
-                };
-                return true;
+                    return #Ok(true);
+                }
             };
-        };   
+        };
     };
-    */
-
-    // Time
-    public shared func getTime() : async Int {
-        return timeLastUpdated;
-    };
-
-    public shared func setTime() : async Bool {
-        timeLastUpdated := Time.now();
-        return true;
-    };
-
-    // Neurons types
-    public type NeuronState = {
-        #Locked;
-        #Dissolving;
-        #Dissolved;
-    };
-
-    public type Neuron = {
-        owner: Principal;
-        amount: Nat;
-        dissolveDelay: Int;
-        neuronState: NeuronState;
-        createdAt: Int;
-        dissolvedAt: Int;
-        depositSubaccount: Types.Subaccount;
-    };
-
-    public type CommonError = {
-        #GenericError : {message : Text };
-    };
-
-    public type Result<T, E> = { #Ok : T; #CommonError : E };
 
     // Neurons methods
-
-    public shared ({caller}) func createNeuron(amount: Nat, dissolveDelay : Int) : async Result<(Bool), CommonError> {
+    public shared ({caller}) func createNeuron(amount: Nat, dissolveDelay : Int) : async Types.DaoResult<(Bool), Types.CommonDaoError> {
         // no anonymous caller
         if(Principal.isAnonymous(caller)) {
-            return #CommonError(#GenericError {message = "Anonymous caller"});
+            return #CommonDaoError(#GenericError {message = "Anonymous caller"});
         };
         // check if the neuron already exists
         let mapEntry = neurons.get(caller);
         switch (mapEntry) {
-            case (null) {
-                // neuron does not exist all good
-            };
+            case (null) {};
             case(?neuron) {
                 // neuron already exists
-                // return #CommonError(#GenericError {message = "Neuron already exists"});
-                if(neuron.neuronState == #Dissolved){
-                    // neuron is dissolved, we can re-init it
-                } else {
-                    // neuron is not dissolved, we cannot re-init it
-                    return #CommonError(#GenericError {message = "Neuron already exists"});
+                if(neuron.neuronState == #Dissolved){/* neuron is dissolved, we can re-init it*/}
+                else {
+                    return #CommonDaoError(#GenericError {message = "Neuron already exists and is not dissolved"});
                 };
             };
         };
@@ -315,14 +188,11 @@ actor class VODAO() = this {
         let callerSubAccount : Types.Subaccount =  await Helpers.accountIdentifier(canisterPrincipal, await Helpers.principalToSubaccount(caller));
         let depositAccount = {owner = canisterPrincipal; subaccount = ?callerSubAccount};
         let balance = await _getBalance(depositAccount);
-        Debug.print("Balance : " # Nat.toText(balance));
-        Debug.print("Amount : " # Nat.toText(amount));
         if(amount < balance){
             // user did not deposit enough :(
-            return #CommonError(#GenericError {message = "Not enough tokens deposited"});
+            return #CommonDaoError(#GenericError {message = "Not enough tokens deposited"});
 
         };
-        Debug.print("Amount : " # Nat.toText(amount));
         // create the neuron
         let neuron = {
             owner = caller;
@@ -338,14 +208,16 @@ actor class VODAO() = this {
         return #Ok(true);
     };
 
-    public shared ({caller}) func dissolveNeuron() : async (Bool) {
-        // no anonymous caller
+    // Dissolve the neuron. Called once to dissolve the neuron and a second time to get back the funds once the delay is over
+    public shared ({caller}) func dissolveNeuron() : async Types.DaoResult<(Bool), Types.CommonDaoError> {
         if(Principal.isAnonymous(caller)) {
-            return false;
+            return #CommonDaoError(#GenericError {message = "Anonymous caller not allowed"});
         };
-        let mapEntry : ?Neuron = neurons.get(caller);
+        let mapEntry : ?Types.Neuron = neurons.get(caller);
         switch(mapEntry){
-            case(null){return false;};
+            case(null){
+                return #CommonDaoError(#GenericError {message = "User did not create a neuron"})
+            };
             case(?neuron){
                 switch(neuron.neuronState){
                     case(#Locked){
@@ -360,27 +232,25 @@ actor class VODAO() = this {
                             depositSubaccount = neuron.depositSubaccount;
                         };
                         neurons.put(caller, updatedNeuron);
-                        return true;
+                        return #Ok(true);
                     };
                     case(#Dissolving){
                         if(neuron.createdAt+neuron.dissolveDelay < Time.now()){
-                         return await _dissolveNeuron(caller, neuron);
+                         let res = await _dissolveNeuron(caller, neuron);
+                         return #Ok(true);
                         } else {
-                            // neuron is not ready to be dissolved
-                            return false;
+                            return #CommonDaoError(#GenericError {message = "Neuron is still dissolving"});
                         };
                     };
                     case (#Dissolved){
-                        // neuron is already dissolved
-                        return false;
+                        return #CommonDaoError(#GenericError {message = "Neuron is already dissolved"});
                     };
                 }
             };
         };
-        return true;
     };
 
-    private func _dissolveNeuron(caller : Principal, neuron : Neuron) : async (Bool) {
+    private func _dissolveNeuron(caller : Principal, neuron : Types.Neuron) : async (Bool) {
            // neuron is ready to be dissolved and funds returned to the user
         let updatedNeuron = {
             owner = neuron.owner;
@@ -417,7 +287,7 @@ actor class VODAO() = this {
         return normalizedVotingPower;
     };
 
-    public func getNeuronVotingPower(neuron : Neuron) : async Float {
+    public func getNeuronVotingPower(neuron : Types.Neuron) : async Float {
         let canisterPrincipal = await idQuick();
         let depositAccount = {owner = canisterPrincipal; subaccount = ?neuron.depositSubaccount};
         let balance = await _getBalance(depositAccount);
@@ -464,27 +334,6 @@ actor class VODAO() = this {
         return Float.fromInt(nanoSeconds) / 2628000000000000;
     };
 
-
-    let defaultSubaccount : Types.Subaccount = Blob.fromArrayMut(Array.init(32, 0 : Nat8));
-
-    // public shared ({caller}) func lock() : async Result<TxIndex, TransferFromError> {
-    public shared ({caller}) func unlock() : async Types.Result<Types.TxIndex, Types.TransferFromError> {
-        let canisterPrincipal = await idQuick();
-        let subAccount : Types.Subaccount = await Helpers.accountIdentifier(canisterPrincipal, await Helpers.principalToSubaccount(caller));
-        let from : Types.Account = {owner: Principal = canisterPrincipal; subaccount: ?Types.Subaccount = ?subAccount};
-        let to : Types.Account = {owner: Principal = caller; subaccount: ?Types.Subaccount = null};
-        let transferFrom : Types.TransferParameters = {
-            from_subaccount = ?subAccount;
-            to = to;
-            amount = 100000000;
-            fee = null;
-            memo = null;
-            created_at_time = null;
-        };
-        await mbt.icrc1_transfer(transferFrom);
-        // return true;
-    };
-
     // Helper functions
     
     // Returns a account derived from the canister's Principal and a subaccount. The subaccount is being derived from the caller's Principal.
@@ -498,34 +347,17 @@ actor class VODAO() = this {
 
     // Getters
 
-    public func get_lastPassedProposal() : async Text {
+    public func getLastPassedProposal() : async Text {
         return lastPassedProposal.proposalText;
     };
 
-    public query func get_all_proposals() : async [Types.Proposal] {
+    public query func getAllProposals() : async [Types.Proposal] {
         return Iter.toArray(proposals.vals());
     };
 
-    public query func get_proposal(id : Nat64) : async ?Types.Proposal {
+    public query func getProposal(id : Nat64) : async ?Types.Proposal {
         return proposals.get(id)
     };
-
-    // Private functions
-    /*
-    private func _checks(caller: Principal) : async Bool {
-        // no anonymous submissions
-        if(Principal.isAnonymous(caller)) {
-            return false;
-        };
-        // check if the caller is part of the DAO, i.e has a balance of 1 or more MBT
-        let balance = await _getBalance(Principal.toText(caller));
-        // TODO: check here should take into account decimals
-        if(balance < 1) {
-            return false;
-        };
-        return true;
-    };
-    */
 
     public func _getBalance(account : Types.Account) : async Nat {
         // let account = { owner = principal; subaccount = null };
@@ -540,6 +372,10 @@ actor class VODAO() = this {
 
     public func idQuick() : async Principal {
         return Principal.fromActor(this);
+    };
+
+    public query func getNeuron(caller : Principal) : async ?Types.Neuron {
+        return neurons.get(caller);
     };
 
     // Upgrade methods
