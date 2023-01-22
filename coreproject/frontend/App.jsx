@@ -1,18 +1,9 @@
 import React, {useEffect} from "react"
-import { createClient } from "@connect2ic/core"
-import { defaultProviders } from "@connect2ic/core/providers"
-import { Connect2ICProvider,ConnectButton } from "@connect2ic/react"
+import { Connect2ICProvider } from "@connect2ic/react"
 import "@connect2ic/core/style.css"
-import * as dao from "../.dfx/local/canisters/dao"
-import * as mbt from "../.dfx/local/canisters/mbt"
-import {DaoName} from "./components/DaoName"
 import {Proposals} from "./components/Proposals"
 import "./index.css"
 import {Navbar} from "./components/Navbar"
-import { PlugWallet } from "@connect2ic/core/providers/plug-wallet"
-
-
-
 
 function App() {
 
@@ -36,21 +27,6 @@ function App() {
     </div>
   )
 }
-
-const client = createClient({
-  canisters: {
-    dao,
-    mbt
-  },
-  providers: defaultProviders,
-  globalProviderConfig: {
-    /*
-     * Disables dev mode in production
-     * Should be enabled when using local canisters
-     */
-    dev: import.meta.env.DEV,
-  },
-})
 
 export default () => (
   <Connect2ICProvider client={client}>
