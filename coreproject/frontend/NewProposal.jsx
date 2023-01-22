@@ -11,13 +11,17 @@ import { useCanister } from "@connect2ic/react"
 
 function NewProposal() {
 
-  const [daoC] = useCanister("dao")
+  // const [daoC] = useCanister("dao")
 
   const [threshold, setThreshold] = useState(0)
   const [minimumVP, setMinimumVP] = useState(0)
   const [quadraticVoting, setQuadraticVoting] = useState(0)
 
   async function getCurrentParameters() {
+    const daoC = await window.ic.plug.createActor({
+      canisterId: "7mmib-yqaaa-aaaap-qa5la-cai",
+      interfaceFactory: dao.idlFactory,
+    });
     let vp = await daoC.getMinimumVotingPower()
     let thresh = await daoC.getThreshold()
     let qc = await daoC.getQuadraticVotingEnabled()
@@ -31,6 +35,10 @@ function NewProposal() {
   }, [])
 
   async function handleNewProposal(typeOfProposal){
+    const daoC = await window.ic.plug.createActor({
+      canisterId: "7mmib-yqaaa-aaaap-qa5la-cai",
+      interfaceFactory: dao.idlFactory,
+    });
     console.log("handleNewProposal", typeOfProposal)
     if(typeOfProposal === "standard"){
       let propText = document.getElementById("comment").value

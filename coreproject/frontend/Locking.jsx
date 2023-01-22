@@ -18,8 +18,8 @@ import { LightningBoltIcon } from '@heroicons/react/solid'
 
 function Locking() {
 
-  const [daoC] = useCanister("dao")
-  const [mbtC] = useCanister("mbt")
+  let [daoC, setDaoC] = useState({});
+  let [mbtC, setMbtC] = useState({});
 
   const [wallet] = useWallet()
 
@@ -28,6 +28,7 @@ function Locking() {
   const [neuronState, setNeuronState] = useState()
   const [startDate, setStartDate] = useState(new Date());
   const [votingPower, setVotingPower] = useState(0);
+  const [pid, setPid] = useState("");
 
   const handleDissolve = async (e) => {
     e.preventDefault()
@@ -44,62 +45,105 @@ function Locking() {
 
   const handleNewTransfer = async (e) => {
     e.preventDefault()
-    console.log("handle new transfer")
     let amount = document.getElementById("amount").value
     console.log("amount", amount)
     let subAccount = await daoC.getAddress();
     console.log("subAccount", subAccount)
     let princinpalCanister = await daoC.idQuick();
     let transferParameters = {
-      from_subaccount: [],
       to: {
         owner : princinpalCanister,
         subaccount : [subAccount],
       },
-      amount: amount*100000000,
-      fee: [],
+      fee: [BigInt(1000000)],
       memo: [],
+      from_subaccount: [],
       created_at_time: [],
+      amount: amount*100000000,
     }
-    console.log("transferParameters", transferParameters)
-    let send = await mbtC.icrc1_transfer(transferParameters)
-    console.log("send", send)
-    refreshBalance()
+    const newMbtC = await window?.ic?.plug?.createActor({
+      canisterId: "db3eq-6iaaa-aaaah-abz6a-cai",
+      interfaceFactory: mbt.idlFactory,
+    });
+    console.log("newMbtC", newMbtC)
+    await newMbtC.icrc1_transfer(transferParameters)
+    // console.log("send", send)
+    // refreshBalance()
   }
 
-  const refreshBalance = async () => {
-    if (wallet?.principal){
-      let account = {owner : Principal.fromText(wallet.principal), subaccount : []}
+  const refreshBalance = async (principal) => {
+      // const principal = await window.ic.plug.agent.getPrincipal();
+      let account = {owner : Principal.fromText(principal), subaccount : []}
       const freshMbtBalance = await daoC._getBalance(account)
       console.log("freshMbtBalance", freshMbtBalance)
       setBalance(Number(freshMbtBalance/BigInt(100000000)))
+  }
+  
+
+  const refreshNeuron = async (principal) => {
+    console.log("refresh neuron", principal)
+    let account = Principal.fromText(principal)
+    const freshNeuron = await daoC.getNeuron(account)
+    setNeuron(freshNeuron)
+    if(!(Array.isArray(freshNeuron) && freshNeuron.length === 0)){
+      setNeuron(freshNeuron[0])
+      let ns = Object.keys(freshNeuron[0]?.neuronState)[0]
+      if(ns==="Dissolved"){
+        setNeuron([])
+      }
+      setNeuronState(ns)
+      console.log("neur", freshNeuron[0])
+      let res = await daoC.getNeuronVotingPower(freshNeuron[0])
+      console.log("voting power", res)
+      setVotingPower(res)
     }
   }
 
-  const refreshNeuron = async () => {
-    if (wallet?.principal){
-      let account = Principal.fromText(wallet.principal)
-      const freshNeuron = await daoC.getNeuron(account)
-      setNeuron(freshNeuron)
-      if(!(Array.isArray(freshNeuron) && freshNeuron.length === 0)){
-        setNeuron(freshNeuron[0])
-        let ns = Object.keys(freshNeuron[0]?.neuronState)[0]
-        if(ns==="Dissolved"){
-          setNeuron([])
-        }
-        setNeuronState(ns)
-        console.log("neur", freshNeuron[0])
-        let res = await daoC.getNeuronVotingPower(freshNeuron[0])
-        console.log("voting power", res)
-        setVotingPower(res)
-      }
-    }
+  var daoCanisterId;
+  var mbtCanisterId;
+  let env = "mainnet"
+
+  const whitelist = [daoCanisterId, mbtCanisterId];
+
+  async function setCannister(){
+    // Initialise Agent, expects no return value
+    const result = await window.ic.plug.isConnected();
+    console.log(`Plug connection is ${result}`);
+    // const publicKey = await window.ic.plug.requestConnect();
+    // console.log("publicKey", publicKey)
+    const newDaoC = await window.ic.plug.createActor({
+      canisterId: daoCanisterId,
+      interfaceFactory: dao.idlFactory,
+    });
+    console.log("new daoC", newDaoC)
+    daoC = newDaoC;
+    setDaoC(newDaoC)
+    const newMbtC = await window?.ic?.plug?.createActor({
+      canisterId: mbtCanisterId,
+      interfaceFactory: mbt.idlFactory,
+    });
+    mbtC = newMbtC;
+    setMbtC(newMbtC)
+    let principal = window.ic.plug.sessionManager.sessionData.principalId
+    console.log("principal", principal)
+    setPid(principal)
+    refreshBalance(principal)
+    refreshNeuron(principal)
   }
 
   useEffect(() => {
-    refreshBalance()
-    refreshNeuron()
-  }, [wallet])
+    if (env==="mainnet"){
+      daoCanisterId = "7mmib-yqaaa-aaaap-qa5la-cai"
+      mbtCanisterId = "db3eq-6iaaa-aaaah-abz6a-cai"
+    } else {
+      daoCanisterId = "rkp4c-7iaaa-aaaaa-aaaca-cai"
+      mbtCanisterId = "renrk-eyaaa-aaaaa-aaada-cai"
+    }
+    async function init(){
+      await setCannister()
+    }
+    init()
+  }, [])
 
   return (
     <div className="bg-white">
@@ -113,7 +157,7 @@ function Locking() {
             Leverage time for more influence.
           </p>
           <p className="mx-auto mt-5 max-w-xl text-xl font-bold">
-            MBT balance: {balance}
+            MBT balance: {balance.toLocaleString()}
           </p>
           <br/>
           {Array.isArray(neuron) && neuron.length === 0 ?

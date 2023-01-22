@@ -57,16 +57,17 @@ actor {
         #Accepted;
     };
 
-    // let dao : actor { get_last_passed_proposal: () -> async Text;} = actor("rkp4c-7iaaa-aaaaa-aaaca-cai");
 
     var last_proposal : Text = "No proposal yet";
+    var env : Text = "mainnet";
 
     public shared ({caller}) func set_last_proposal(proposal: Text) : () {
         // TODO : not sure this works
-        assert caller == Principal.fromText("rkp4c-7iaaa-aaaaa-aaaca-cai");
+        if (caller != getDaoCanisterId()) {
+            return;
+        };
         last_proposal := proposal;
     };
-
 
     public query func http_request(req: HttpRequest) : async HttpResponse {
         // let proposal = await get_last_passed_proposal();
@@ -79,9 +80,11 @@ actor {
         })
     };
 
-    /*
-    public func get_last_passed_proposal() : async Text {
-        return await dao.get_last_passed_proposal();
+    private func getDaoCanisterId() : Principal {
+        if(env == "mainnet"){
+            return Principal.fromText("7mmib-yqaaa-aaaap-qa5la-cai");
+        } else {
+            return Principal.fromText("rkp4c-7iaaa-aaaaa-aaaca-cai");
+        }
     };
-    */
 }

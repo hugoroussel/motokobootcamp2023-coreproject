@@ -1,12 +1,12 @@
 import { useCanister } from "@connect2ic/react"
 import React, { useEffect, useState } from "react"
 import { ArrowDownIcon, ArrowUpIcon } from '@heroicons/react/solid'
-
+import * as dao from "../../.dfx/local/canisters/dao"
 const Proposals = () => {
   /*
   * This how you use canisters throughout your app.
   */
-  const [daoC] = useCanister("dao")
+  // const [daoC] = useCanister("dao")
   const [daoProposals, setDaoProposals] = useState([])
   const [daoOngoingProposals, setDaoOngoingProposals] = useState([])
   const [daoRejectedProposals, setDaoRejectedProposals] = useState([])
@@ -35,6 +35,10 @@ const Proposals = () => {
   }
 
   const refreshDaoProposals = async () => {
+    const daoC = await window.ic.plug.createActor({
+      canisterId: "7mmib-yqaaa-aaaap-qa5la-cai",
+      interfaceFactory: dao.idlFactory,
+    });
     const freshDaoProposals = await daoC.getAllProposals()
     console.log("getting dao proposals", freshDaoProposals)
     let freshA = []
@@ -127,7 +131,7 @@ const Proposals = () => {
                   <div>ID : {Number(item.id)}</div>
                 </div>
                 <div className="col-span-4">
-                  <div className="font-bold">{item.proposalText}</div>
+                  <div className="font-bold">{item.proposalText.substring(0,22)+"..."}</div>
                   <div>Votes : {Number(item.numberOfVotes)}</div>
                   <div>Status : {Object.keys(item.status)[0]}</div>   
                 </div>
@@ -139,7 +143,7 @@ const Proposals = () => {
                   <div>ID : {Number(item.id)}</div>
                 </div>
                 <div className="col-span-4">
-                  <div className="font-bold">{item.proposalText}</div>
+                  <div className="font-bold">{item.proposalText.substring(0,22)+"..."}</div>
                   <div>Votes : {Number(item.numberOfVotes)}</div>
                   <div>Status : {Object.keys(item.status)[0]}</div>   
                 </div>
@@ -157,7 +161,7 @@ const Proposals = () => {
                   <div>ID : {Number(item.id)}</div>
                 </div>
                 <div className="col-span-4">
-                  <div className="font-bold">{item.proposalText}</div>
+                  <div className="font-bold">{item.proposalText.substring(0,22)+"..."}</div>
                   <div>Votes : {Number(item.numberOfVotes)}</div>
                   <div>Time : {(new Date(Number(item.time/BigInt(1000000000))*1000)).toString().substring(3,24)}</div>
                 </div>

@@ -31,10 +31,10 @@ actor class VODAO() = this {
     let mbt : actor { 
         icrc1_balance_of: (Types.Account) -> async Nat;
         icrc1_transfer: (Types.TransferParameters) -> async Types.Result<Types.TxIndex, Types.TransferError>;
-    } = actor("renrk-eyaaa-aaaaa-aaada-cai");
+    } = actor(getMbtCanisterId());
 
     // TODO : change the actor principal id to the mainnet one
-    let webpage : actor { set_last_proposal: (Text) -> async ();} = actor("rno2w-sqaaa-aaaaa-aaacq-cai");
+    let webpage : actor { set_last_proposal: (Text) -> async ();} = actor(getWebpageCanisterId());
 
     // DAO parameters
     var daoName: Text = "VodaDao";
@@ -42,6 +42,7 @@ actor class VODAO() = this {
     var thresholdRejection: Float = -thresholdAcceptance;
     var minimumAmountOfVotingPower : Float = 1;
     var quadraticVotingEnabled : Bool = false;
+    let env : Text = "mainnet";
 
     // Proposals initialization and reinstantiation via stable memory
     func nat64Hash(n : Nat64) : Hash.Hash { 
@@ -273,7 +274,7 @@ actor class VODAO() = this {
             from_subaccount = ?neuron.depositSubaccount;
             to = {owner = caller; subaccount = null};
             amount = balance;
-            fee = null;
+            fee = ?1000000;
             memo = null;
             created_at_time = null;
         };
@@ -343,6 +344,22 @@ actor class VODAO() = this {
       let principalCanister = await idQuick();
       let subAcccount = await Helpers.principalToSubaccount(caller);
       return await Helpers.accountIdentifier(principalCanister, subAcccount);
+    };
+
+    private func getMbtCanisterId() : Text {
+        if (Text.equal("mainnet", env)){
+            return "db3eq-6iaaa-aaaah-abz6a-cai";
+        } else {
+            return "renrk-eyaaa-aaaaa-aaada-cai";
+        };
+    };
+
+    private func getWebpageCanisterId() : Text {
+        if (Text.equal("mainnet", env)){
+            return "6gdk3-2aaaa-aaaap-qa5ma-cai";
+        } else {
+            return "rno2w-sqaaa-aaaaa-aaacq-cai";
+        };
     };
 
     // Getters

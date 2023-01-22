@@ -3,35 +3,43 @@ import { useCanister, useBalance, useWallet,ConnectButton,ConnectDialog} from "@
 import {Link} from "react-router-dom"
 import {PlusIcon, HomeIcon, LockClosedIcon} from '@heroicons/react/solid'
 import { Principal } from '@dfinity/principal';
+import { getWhitelist } from '../utils';
 
 const Navbar = () => {
 
-    const [wallet] = useWallet()
-    const [assets] = useBalance()
+   let [connected, setConnected] = useState(false);
 
-    const [daoC] = useCanister("dao")
-    const [mbtBalance, setMbtBalance] = useState(0)
+   async function handleConnectWallet(){
+    console.log(getWhitelist());
+    let whitelist = getWhitelist();
+    try {
+        const publicKey = await window.ic.plug.requestConnect({
+          host : "https://mainnet.dfinity.network",
+          whitelist,
+          timeout: 50000
+        });
+        console.log(`The connected user's public key is:`, publicKey);
+        setConnected(true);
+    } catch (e) {
+        console.log(e);
+    }
+   }
 
-    const refreshBalance = async () => {
-        console.log("wallet", wallet)
-        if (wallet?.principal){
-            let account = {
-                owner : Principal.fromText(wallet.principal),
-                subaccount : [],
-            }
-            const freshMbtBalance = await daoC._getBalance(account)
-            console.log("freshMbtBalance", freshMbtBalance)
-            setMbtBalance(Number(freshMbtBalance/BigInt(100000000)))
+   useEffect(() => {
+    async function checkPlugIsConnected() {
+        const result = await window.ic.plug.isConnected();
+        console.log(`Plug connection is ${result}`);
+        if(result){
+            setConnected(true);
         } else {
-            console.log("no wallet")
+            setConnected(false);
         }
     }
+    checkPlugIsConnected();
+   }, []);
 
-    useEffect(() => {
-        console.log("hello navbar")
-        refreshBalance()
-    }, [wallet])
-    
+
+
   return (
         <>
           <div className="mx-auto max-w-7xl px-2 sm:px-6 lg:px-8">
@@ -45,15 +53,18 @@ const Navbar = () => {
                         <PlusIcon className='h-6 w-6'/>
                         <Link to="/new">New proposal</Link>
                         &nbsp;&nbsp;&nbsp;&nbsp;
-                        <LockClosedIcon className='h-6 w-6'/>
+                        <LockClosedIcon className='h-6 w-6 ml-5'/>
                         <Link to="/lock">Locking</Link>
                     </div>
                     <div className='col-span-2'>
-                        <ConnectButton
-                        onConnect={() => {window.ic?.plug.sessionManager.sessionData?.agent.fetchRootKey();console.log("connected")}}
-                        />
+                        <button 
+                        type="button"
+                        className="inline-flex items-center rounded-full border border-transparent bg-black px-6 py-2 text-xl font-medium text-white shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        onClick={(e)=>{e.preventDefault();handleConnectWallet()}}
+                        >
+                        {connected ? "Connected" : "Connect Wallet"}
+                        </button>
                     </div>
-                    <ConnectDialog />
                 </div>
           </div>
         </>
