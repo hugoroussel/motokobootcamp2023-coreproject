@@ -66,6 +66,10 @@ const Proposals = () => {
 
   async function handleVote(e,id,upvote) {
     e.preventDefault()
+    const daoC = await window.ic.plug.createActor({
+      canisterId: "7mmib-yqaaa-aaaap-qa5la-cai",
+      interfaceFactory: dao.idlFactory,
+    });
     console.log("id upvote", id, upvote)
     await daoC.vote(id, upvote)
     refreshDaoProposals()

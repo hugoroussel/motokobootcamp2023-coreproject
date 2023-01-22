@@ -49,6 +49,7 @@ function Locking() {
     console.log("amount", amount)
     let subAccount = await daoC.getAddress();
     console.log("subAccount", subAccount)
+    // can shave 2 seconds off by hardcoding this
     let princinpalCanister = await daoC.idQuick();
     let transferParameters = {
       to: {
