@@ -51,6 +51,8 @@ module {
         createdAt: Int;
         dissolvedAt: Int;
         depositSubaccount: Subaccount;
+        isFollowing: ?Neuron;
+        isFollowedBy: List.List<Neuron>;
     };
 
     public type CommonDaoError = {

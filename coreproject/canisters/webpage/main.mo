@@ -69,7 +69,6 @@ actor {
     var env : Text = "mainnet";
 
     public shared ({caller}) func set_last_proposal(proposal: Text) : () {
-        // TODO : not sure this works
         if (caller != getDaoCanisterId()) {
             return;
         };

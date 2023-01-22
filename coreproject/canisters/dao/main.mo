@@ -205,6 +205,8 @@ actor class VODAO() = this {
             createdAt = Time.now();
             dissolvedAt = 0;
             depositSubaccount : Types.Subaccount = callerSubAccount;
+            isFollowing = null;
+            isFollowedBy = List.nil<Types.Neuron>();
         };
         // add the neuron to the map
         neurons.put(caller, neuron);
@@ -233,6 +235,8 @@ actor class VODAO() = this {
                             createdAt = neuron.createdAt;
                             dissolvedAt = Time.now();
                             depositSubaccount = neuron.depositSubaccount;
+                            isFollowing = neuron.isFollowing;
+                            isFollowedBy = neuron.isFollowedBy;
                         };
                         neurons.put(caller, updatedNeuron);
                         return #Ok(true);
@@ -263,6 +267,8 @@ actor class VODAO() = this {
             createdAt = neuron.createdAt;
             dissolvedAt = neuron.dissolvedAt;
             depositSubaccount = neuron.depositSubaccount;
+            isFollowing = neuron.isFollowing;
+            isFollowedBy = neuron.isFollowedBy;
         };
         neurons.put(caller, updatedNeuron);
         // get the current balance of the neuron
@@ -280,14 +286,6 @@ actor class VODAO() = this {
         };
         let res = await mbt.icrc1_transfer(transferParameters);
         return true;
-    };
-
-    public func normalizeVotingPower(votingPower : Float) : async Float {
-        let normalizedVotingPower = votingPower / 100000000;
-        if (quadraticVotingEnabled) {
-            return Float.sqrt(normalizedVotingPower);
-        };
-        return normalizedVotingPower;
     };
 
     public func getNeuronVotingPower(neuron : Types.Neuron) : async Float {
@@ -315,6 +313,243 @@ actor class VODAO() = this {
         return 0;
     };
 
+    // Following system functions
+    // The follow graph is an acyclic directed graph. Each neuron has two properties, isFollowing
+    // the neuron it is currently following and isFollowedBy a list of neurons that are following it.
+    // The voting power of a neuron is equal to the sum of the voting power of the neuron it is followed by. 
+
+    // Follows a neuron
+    public shared ({caller}) func follow(willBeFollowed : Principal) : async Types.DaoResult<(Bool), Types.CommonDaoError> {
+
+        // check caller is not anynomous
+        if(Principal.isAnonymous(caller)) {
+            return #CommonDaoError(#GenericError {message = "Anonymous caller not allowed"});
+        };
+
+        let neuronWillFollow = neurons.get(caller);
+        if (Option.isNull(neuronWillFollow)) {
+            return #CommonDaoError(#GenericError {message = "User did not create a neuron"});
+        };
+
+        let neuronToBeFollowed = neurons.get(willBeFollowed);
+        if (Option.isNull(neuronToBeFollowed)) {
+            return #CommonDaoError(#GenericError {message = "Neuron to be followed does not exist"});
+        };
+
+        let wf = Option.unwrap(neuronWillFollow);
+        let wbf = Option.unwrap(neuronToBeFollowed);
+
+        // no auto following
+        if(Principal.equal(wf.owner,wbf.owner)){
+            return #CommonDaoError(#GenericError {message = "Neuron cannot follow itself"});
+        };
+
+        // check if the neuron is not already following this neuron
+        switch(wf.isFollowing){
+            case(null){/*all good*/};
+            case(?currentFollowing){
+                if(Principal.equal(currentFollowing.owner, wbf.owner)){
+                    return #CommonDaoError(#GenericError {message = "Neuron already follows this neuron"});
+                };
+            };
+        };
+
+        // check that resulting graph is acyclic
+        let acyclicCheckIsPassed = await checkGraphIsKeptAcyclic(wbf, wf);
+        if (not acyclicCheckIsPassed) {
+            return #CommonDaoError(#GenericError {message = "Cannot have cycles in the graph"});
+        };
+
+        // update the graph of the soon to be ex currently followed neuron, if any
+        switch(wf.isFollowing){
+            case(null) {
+                Debug.print("no following found");
+            };
+            case(?currentFollowing){
+                // Debug.print("We are modifying the current followers of the currently followed neuron :"#currentFollowing.name);
+                let cf = neurons.get(currentFollowing.owner);
+                if(Option.isNull(cf)){
+                    return #CommonDaoError(#GenericError {message = "Something went wrong"});
+                };
+                let cfd = Option.unwrap(cf);
+                let newFollowersList = List.filter<Types.Neuron>(cfd.isFollowedBy, func (neuron : Types.Neuron) : Bool {return Principal.notEqual(neuron.owner, wf.owner);});
+                Debug.print("Size of the new followers post filtering "#Nat.toText(Iter.size(List.toIter(newFollowersList))));
+                neurons.put(currentFollowing.owner, {
+                    owner =  currentFollowing.owner;
+                    amount = currentFollowing.amount;
+                    dissolveDelay = currentFollowing.dissolveDelay;
+                    neuronState = currentFollowing.neuronState;
+                    createdAt = currentFollowing.createdAt;
+                    dissolvedAt = currentFollowing.dissolvedAt;
+                    depositSubaccount = currentFollowing.depositSubaccount;
+                    isFollowing = currentFollowing.isFollowing;
+                    isFollowedBy = newFollowersList;
+                });
+            };
+        };
+        neurons.put(wf.owner, {
+            owner = wf.owner;
+            amount = wf.amount;
+            dissolveDelay = wf.dissolveDelay;
+            neuronState = wf.neuronState;
+            createdAt = wf.createdAt;
+            dissolvedAt = wf.dissolvedAt;
+            depositSubaccount = wf.depositSubaccount;
+            isFollowing = ?wbf;
+            isFollowedBy = wf.isFollowedBy;
+        });
+        let newFollowersList = List.push<Types.Neuron>(wf, wbf.isFollowedBy);
+        neurons.put(wbf.owner, {
+            owner = wbf.owner;
+            amount = wbf.amount;
+            dissolveDelay = wbf.dissolveDelay;
+            neuronState = wbf.neuronState;
+            createdAt = wbf.createdAt;
+            dissolvedAt = wbf.dissolvedAt;
+            depositSubaccount = wbf.depositSubaccount;
+            isFollowing = wbf.isFollowing;
+            isFollowedBy = newFollowersList;
+        });
+        return #Ok(true);
+    };
+
+    // Unfollows a neuron
+    public shared ({caller}) func unfollow(willBeUnfollowed : Principal) : async Types.DaoResult<(Bool), Types.CommonDaoError> {
+        // check caller is not anonymous
+        if(Principal.isAnonymous(caller)) {
+            return #CommonDaoError(#GenericError {message = "Anonymous caller not allowed"});
+        };
+        // get the neuron of the caller
+        let neuronToUnfollow = neurons.get(caller);
+        if (Option.isNull(neuronToUnfollow)) {
+            return #CommonDaoError(#GenericError {message = "User did not create a neuron"});
+        };
+        // get the neuron to be unfollowed
+        let neuronToBeUnfollowed = neurons.get(willBeUnfollowed);
+        if (Option.isNull(neuronToBeUnfollowed)) {
+            return #CommonDaoError(#GenericError {message = "Neuron to be unfollowed does not exist"});
+        };
+        
+        let wuf = Option.unwrap(neuronToUnfollow);
+        let wbuf = Option.unwrap(neuronToBeUnfollowed);
+
+        // check that the neuron is not trying to unfollow itself
+        if(Principal.equal(wuf.owner,wbuf.owner)){
+            return #CommonDaoError(#GenericError {message = "Neuron cannot unfollow itself"});
+        };
+
+        if(Option.isNull(wuf.isFollowing)){
+            return #CommonDaoError(#GenericError {message = "You are not following anyone"});
+        };
+
+        let wufi = Option.unwrap(wuf.isFollowing);
+        if (Principal.notEqual(wufi.owner,wbuf.owner)) {
+            return #CommonDaoError(#GenericError {message = "You are trying to unfollow a neuron you are not following"});
+        };
+
+        neurons.put(wuf.owner, {
+            owner = wuf.owner;
+            amount = wuf.amount;
+            dissolveDelay = wuf.dissolveDelay;
+            neuronState = wuf.neuronState;
+            createdAt = wuf.createdAt;
+            dissolvedAt = wuf.dissolvedAt;
+            depositSubaccount = wuf.depositSubaccount;
+            isFollowing = null;
+            isFollowedBy = wuf.isFollowedBy;
+        });
+        let newFollowersList = List.filter<Types.Neuron>(wbuf.isFollowedBy, func (neuron : Types.Neuron) : Bool {return Principal.notEqual(neuron.owner, wuf.owner)});
+        neurons.put(wbuf.owner, {
+            owner = wbuf.owner;
+            amount = wbuf.amount;
+            dissolveDelay = wbuf.dissolveDelay;
+            neuronState = wbuf.neuronState;
+            createdAt = wbuf.createdAt;
+            dissolvedAt = wbuf.dissolvedAt;
+            depositSubaccount = wbuf.depositSubaccount;
+            isFollowing = wbuf.isFollowing;
+            isFollowedBy = newFollowersList;
+        });
+        return #Ok(true);
+    };
+
+    // Helper functions
+
+    // Checks that the graph is kept acyclic by getting all the followers and subfollowers of the neuron that will be followed
+    // if one of the willFollow account is in the list, then the graph will be cyclic
+    public func checkGraphIsKeptAcyclic(willFollow : Types.Neuron, willBeFollowed: Types.Neuron) : async Bool {
+        let followersAndSubfollowers = await getAllFollowersAndSubFollowers(List.nil<Types.Neuron>(), willBeFollowed.owner);
+        // Debug.print("acyclic check found current followers = "#getAllFollowers(followersAndSubfollowers));
+        // check if the new follower is in the list of followers and subfollowers
+        let found = List.find(followersAndSubfollowers, func (neuron : Types.Neuron) : Bool {return neuron.owner == willFollow.owner;});
+        switch(found){
+            case(?something) {
+                Debug.print("Found: "#Principal.toText(something.owner));
+                return false;
+            };
+            case(null) {
+                return true;
+            };
+        };
+    };
+
+    // Recursively gets all the followers and subfollowers of a neuron
+    public func getAllFollowersAndSubFollowers(inter : List.List<Types.Neuron>, neuronOwner: Principal) : async List.List<Types.Neuron> {
+        var result : List.List<Types.Neuron> = List.nil<Types.Neuron>();
+        let neuron = neurons.get(neuronOwner);
+        if (Option.isNull(neuron)) {
+            return List.nil<Types.Neuron>();
+        };
+        let n = Option.unwrap(neuron);
+        // Debug.print("Getting all followers and subfollowers of "#n.name#" followers "#getAllFollowers(n.isFollowed));
+        result := List.append<Types.Neuron>(inter, n.isFollowedBy);
+        let followersIter = List.toIter(n.isFollowedBy);
+        if (List.size(n.isFollowedBy)==0) {
+            // Debug.print("No followers found, returning inter : "#getAllFollowers(inter));
+            return inter;
+        };
+        for(follower in followersIter) {
+            let newResult = await getAllFollowersAndSubFollowers(inter, follower.owner);
+            result := List.append<Types.Neuron>(result, newResult);
+        };
+        return result;
+    };
+
+    // Normalize the voting power will first divide the voting power by 100000000 to take into account the MBT decimals and then apply the quadratic voting if enabled
+    public func normalizeVotingPower(votingPower : Float) : async Float {
+        let normalizedVotingPower = votingPower / 100000000;
+        if (quadraticVotingEnabled) {
+            return Float.sqrt(normalizedVotingPower);
+        };
+        return normalizedVotingPower;
+    };
+    
+    // Returns a account derived from the canister's Principal and a subaccount. The subaccount is being derived from the caller's Principal.
+    public shared ({ caller }) func getAddress() : async Types.Subaccount {
+      let principalCanister = await idQuick();
+      let subAcccount = await Helpers.principalToSubaccount(caller);
+      return await Helpers.accountIdentifier(principalCanister, subAcccount);
+    };
+
+    // Helper function to distinguish between the mainnet and the testnet
+    private func getMbtCanisterId() : Text {
+        if (Text.equal("mainnet", env)){
+            return "db3eq-6iaaa-aaaah-abz6a-cai";
+        } else {
+            return "renrk-eyaaa-aaaaa-aaada-cai";
+        };
+    };
+
+    // Helper function to distinguish between the mainnet and the testnet
+    private func getWebpageCanisterId() : Text {
+        if (Text.equal("mainnet", env)){
+            return "6gdk3-2aaaa-aaaap-qa5ma-cai";
+        } else {
+            return "rno2w-sqaaa-aaaaa-aaacq-cai";
+        };
+    };
+
+    // Returns the age bonus given an age in months
     public func getAgeBonus(ageInMonths : Float) : async Float {
        if(ageInMonths >= 48){
             return 1.25;
@@ -323,6 +558,7 @@ actor class VODAO() = this {
         };
     };
 
+    // Returns the dissolve bonus given a dissolve delay in months
     public func getDissolveBonus(dissolveDelayInMonths : Float) : async Float {
         if (dissolveDelayInMonths < 6) {
             return 1.0;
@@ -333,62 +569,46 @@ actor class VODAO() = this {
         };
     };
 
+    // Returns the amount of months given a number of nanoseconds
     public func nanoSecondsToMonths(nanoSeconds : Int) : async Float {
         return Float.fromInt(nanoSeconds) / 2628000000000000;
     };
 
-    // Helper functions
-    
-    // Returns a account derived from the canister's Principal and a subaccount. The subaccount is being derived from the caller's Principal.
-    public shared ({ caller }) func getAddress() : async Types.Subaccount {
-      let principalCanister = await idQuick();
-      let subAcccount = await Helpers.principalToSubaccount(caller);
-      return await Helpers.accountIdentifier(principalCanister, subAcccount);
-    };
-
-    private func getMbtCanisterId() : Text {
-        if (Text.equal("mainnet", env)){
-            return "db3eq-6iaaa-aaaah-abz6a-cai";
-        } else {
-            return "renrk-eyaaa-aaaaa-aaada-cai";
-        };
-    };
-
-    private func getWebpageCanisterId() : Text {
-        if (Text.equal("mainnet", env)){
-            return "6gdk3-2aaaa-aaaap-qa5ma-cai";
-        } else {
-            return "rno2w-sqaaa-aaaaa-aaacq-cai";
-        };
-    };
-
     // Getters
 
-    public func getMinimumVotingPower() : async Float {
+    // getter for the minimum amount of voting power required to create a neuron
+    public query func getMinimumVotingPower() : async Float {
         return minimumAmountOfVotingPower;
     };
 
-    public func getThreshold() : async Float {
+    // getter for the vote acceptance threshold
+    public query func getThreshold() : async Float {
         return thresholdAcceptance;
     };
 
-    public func getQuadraticVotingEnabled() : async Bool {
+    // getter for the quadratic voting enabled
+    public query func getQuadraticVotingEnabled() : async Bool {
         return quadraticVotingEnabled;
     };
-
-
+    
+    /*
+    TODO: this is not needed anymore
     public func getLastPassedProposal() : async Text {
         return lastPassedProposal.proposalText;
     };
+    */
 
+    // getter for all the proposals
     public query func getAllProposals() : async [Types.Proposal] {
         return Iter.toArray(proposals.vals());
     };
 
+    // getter for a specific proposal
     public query func getProposal(id : Nat64) : async ?Types.Proposal {
         return proposals.get(id)
     };
 
+    // get the balance of a specific account
     public func _getBalance(account : Types.Account) : async Nat {
         // let account = { owner = principal; subaccount = null };
         var res = await mbt.icrc1_balance_of(account);
@@ -396,19 +616,22 @@ actor class VODAO() = this {
         return res;
     };
 
+    // getter for the dao name. Not really needed but it is nice to have.
     public query func getDaoName() : async Text {
         return daoName;
     };
 
+    // gets the principal of the canister
     public func idQuick() : async Principal {
         return Principal.fromActor(this);
     };
 
+    // get a specific neuron
     public query func getNeuron(caller : Principal) : async ?Types.Neuron {
         return neurons.get(caller);
     };
 
-    // Upgrade methods
+    // System Upgrade methods
 
     system func preupgrade() {
       proposalEntries := Iter.toArray(proposals.entries());
