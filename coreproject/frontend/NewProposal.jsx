@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from "react"
+import React, { Fragment, useEffect, useState } from "react"
 import { createClient } from "@connect2ic/core"
 import { defaultProviders } from "@connect2ic/core/providers"
-import { Connect2ICProvider,ConnectButton } from "@connect2ic/react"
+import { Connect2ICProvider} from "@connect2ic/react"
 import "@connect2ic/core/style.css"
 import * as dao from "../.dfx/local/canisters/dao"
 import "./index.css"
 import {Navbar} from "./components/Navbar"
-import { useCanister } from "@connect2ic/react"
+import { XCircleIcon, CubeTransparentIcon } from "@heroicons/react/solid"
+import {Transition} from "@headlessui/react"
+import LoadingGif from "./loading.gif"
 
 
 function NewProposal() {
@@ -16,6 +18,10 @@ function NewProposal() {
   const [threshold, setThreshold] = useState(0)
   const [minimumVP, setMinimumVP] = useState(0)
   const [quadraticVoting, setQuadraticVoting] = useState(0)
+
+  const [show, setShow] = useState(false)
+  const [resultMessage, setResultMessage] = useState("")
+  const [loading, setLoading] = useState(false);
 
   async function getCurrentParameters() {
     const daoC = await window.ic.plug.createActor({
@@ -35,6 +41,7 @@ function NewProposal() {
   }, [])
 
   async function handleNewProposal(typeOfProposal){
+    setLoading(true)
     const daoC = await window.ic.plug.createActor({
       canisterId: "7mmib-yqaaa-aaaap-qa5la-cai",
       interfaceFactory: dao.idlFactory,
@@ -82,7 +89,9 @@ function NewProposal() {
       let prop = await daoC.submitProposal(propText, proposalType)
       console.log("prop", prop)
     }
-
+    setLoading(false)
+    setResultMessage("Proposal submitted!")
+    setShow(true)
   }
 
   return (
@@ -91,10 +100,10 @@ function NewProposal() {
       <div className="mx-auto max-w-7xl py-16 px-6 sm:py-24 lg:px-8">
       <div className="text-center">
           <p className="mt-1 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
-          [ˈVƆDAO]
+          B∞ild
           </p>
           <p className="mx-auto mt-5 max-w-xl text-xl text-gray-500">
-            Liquid Democracy for the Internet Computer
+          Submit a proposal to the DAO
           </p>
       </div>
       <br/>
@@ -117,6 +126,9 @@ function NewProposal() {
               />
             </div>
             <br/>
+            {loading ? (
+              <img className="h-10 w-10 inline-flex items-center " src={LoadingGif}/>   
+            ) : (
             <button
                   type="button"
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-full shadow-sm text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
@@ -124,6 +136,7 @@ function NewProposal() {
                 >
             Submit
             </button>
+            )}
             <br/>
           </div>
           </div>
@@ -149,6 +162,9 @@ function NewProposal() {
             <br/>
             <br/>
             <br/>
+            {loading ? (
+              <img className="h-10 w-10 inline-flex items-center " src={LoadingGif}/>   
+            ) : (
             <button
                   type="button"
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-full shadow-sm text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
@@ -156,6 +172,7 @@ function NewProposal() {
                 >
             Submit
             </button>
+            )}
             <br/>
         </div>
       </div>
@@ -178,6 +195,9 @@ function NewProposal() {
           <br/>
           <br/>
           <br/>
+          {loading ? (
+            <img className="h-10 w-10 inline-flex items-center " src={LoadingGif}/>   
+          ) : (
           <button
                 type="button"
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-full shadow-sm text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
@@ -185,7 +205,7 @@ function NewProposal() {
               >
           Submit
           </button>
-          
+          )}
       </div>
       </div>
 
@@ -200,6 +220,9 @@ function NewProposal() {
             <br/>
             <br/>
             <br/>
+            {loading ? (
+              <img className="h-10 w-10 inline-flex items-center " src={LoadingGif}/>   
+            ) : (
             <button
                   type="button"
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-full shadow-sm text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
@@ -207,15 +230,56 @@ function NewProposal() {
                 >
             Submit
             </button>
+            )}
             <br/>
         </div>
       </div>
-
+      </div>        
       </div>
-
-
-        
-      </div>
+      <div
+          aria-live="assertive"
+          className="pointer-events-none fixed inset-0 flex items-end px-4 py-6 sm:items-start sm:p-6"
+        >
+          <div className="flex w-full flex-col items-center space-y-4 sm:items-end">
+            {/* Notification panel, dynamically insert this into the live region when it needs to be displayed */}
+            <Transition
+              show={show}
+              as={Fragment}
+              enter="transform ease-out duration-300 transition"
+              enterFrom="translate-y-2 opacity-0 sm:translate-y-0 sm:translate-x-2"
+              enterTo="translate-y-0 opacity-100 sm:translate-x-0"
+              leave="transition ease-in duration-100"
+              leaveFrom="opacity-100"
+              leaveTo="opacity-0"
+            >
+              <div className="pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5">
+                <div className="p-4">
+                  <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <CubeTransparentIcon className="h-10 w-10 text-black" aria-hidden="true" />
+                  </div>
+                    <div className="ml-3 w-0 flex-1 pt-0.5">
+                      <p className="text-sm font-medium text-gray-900">New Notification</p>
+                      <p className="mt-1 text-sm text-gray-500">{resultMessage}</p>
+                    </div>
+                    <div className="ml-4 flex flex-shrink-0">
+                      <button
+                        type="button"
+                        className="inline-flex rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
+                        onClick={() => {
+                          setShow(false)
+                        }}
+                      >
+                        <span className="sr-only">Close</span>
+                        <XCircleIcon className="h-5 w-5" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </div>
+        </div>
     </div>
   )
 }

@@ -73,6 +73,7 @@ actor {
             return;
         };
         last_proposal := proposal;
+        update_asset_hash();
     };
 
     func main_page(): Blob {

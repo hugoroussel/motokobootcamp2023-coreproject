@@ -24,9 +24,6 @@ function App() {
           <p className="mt-1 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
           [ˈVƆDAO]
           </p>
-          <p className="mx-auto mt-5 max-w-xl text-md text-gray-500">
-            water in slavic
-          </p>
           <p className="mx-auto mt-5 max-w-xl text-xl text-gray-500">
             Liquid Democracy for the Internet Computer
           </p>

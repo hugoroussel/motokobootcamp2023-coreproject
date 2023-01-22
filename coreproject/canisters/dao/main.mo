@@ -78,7 +78,7 @@ actor class VODAO() = this {
         let neuron = neurons.get(caller);
         switch(neuron){
             case(null){
-                return #CommonDaoError(#GenericError {message = "Caller has did not create a neuron"});
+                return #CommonDaoError(#GenericError {message = "Caller did not create a neuron"});
             };
             case(?neuron){
                  // assert await _checks(caller);
@@ -103,7 +103,7 @@ actor class VODAO() = this {
         var votingPower : Float = 0;
         switch(neuron){
             case(null){
-                return #CommonDaoError(#GenericError {message = "Voter has did not create a neuron"});
+                return #CommonDaoError(#GenericError {message = "Voter did not create a neuron"});
             };
             case(?neuron){
                     votingPower := await getNeuronTotalVotingPower(neuron);
@@ -133,7 +133,11 @@ actor class VODAO() = this {
                 } else {
                     newNumberOfVotes := proposal.numberOfVotes-finalVotingPower;
                 };
-                let newVoters : List.List<Principal> = List.push(caller, proposal.voters);
+                // we also remove the followers of the voter, otherwise votes would be counted twice
+                let followersOfVoter = await getAllFollowersAndSubFollowers(List.nil<Types.Neuron>(),caller);
+                let principalOfFollowers = List.map<Types.Neuron, Principal>(followersOfVoter, func x = x.owner);
+                var newVoters : List.List<Principal> = List.push(caller, proposal.voters);
+                newVoters := List.append(principalOfFollowers, newVoters);
 
                 if(newNumberOfVotes>=thresholdAcceptance){
                     switch(proposal.proposalType){
@@ -644,6 +648,11 @@ actor class VODAO() = this {
     // get a specific neuron
     public query func getNeuron(caller : Principal) : async ?Types.Neuron {
         return neurons.get(caller);
+    };
+
+    // get all the neurons
+    public query func getAllNeurons() : async [Types.Neuron] {
+        return Iter.toArray(neurons.vals());
     };
 
     // System Upgrade methods

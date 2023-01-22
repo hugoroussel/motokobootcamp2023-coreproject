@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useCanister, useBalance, useWallet,ConnectButton,ConnectDialog} from "@connect2ic/react"
 import {Link} from "react-router-dom"
-import {PlusIcon, HomeIcon, LockClosedIcon} from '@heroicons/react/solid'
+import {PlusIcon, HomeIcon, LockClosedIcon, UserAddIcon} from '@heroicons/react/solid'
 import { Principal } from '@dfinity/principal';
 import { getWhitelist } from '../utils';
 
@@ -10,6 +10,15 @@ const Navbar = () => {
    let [connected, setConnected] = useState(false);
 
    async function handleConnectWallet(){
+    if(connected){
+        setConnected(false);
+        localStorage.setItem("principal", "");
+        return;
+    } else {
+        let principal = window.ic.plug.sessionManager.sessionData.principalId
+        console.log("principal", principal);
+        localStorage.setItem("principal", principal);
+    }
     console.log(getWhitelist());
     let whitelist = getWhitelist();
     try {
@@ -18,7 +27,6 @@ const Navbar = () => {
           whitelist,
           timeout: 50000
         });
-        console.log(`The connected user's public key is:`, publicKey);
         setConnected(true);
     } catch (e) {
         console.log(e);
@@ -28,8 +36,10 @@ const Navbar = () => {
    useEffect(() => {
     async function checkPlugIsConnected() {
         const result = await window.ic.plug.isConnected();
-        console.log(`Plug connection is ${result}`);
         if(result){
+            let principal = window.ic.plug.sessionManager.sessionData.principalId
+            console.log("principal", principal);
+            localStorage.setItem("principal", principal);
             setConnected(true);
         } else {
             setConnected(false);
@@ -48,21 +58,24 @@ const Navbar = () => {
                         <HomeIcon className='h-6 w-6'/>
                         <Link to="/">Home</Link>
                     </div>
-                    <div className='col-span-7 mt-3 text-md font-bold flex ml-96'>
+                    <div className='col-span-7 mt-3 text-md font-bold flex ml-80'>
                         &nbsp;&nbsp;&nbsp;&nbsp;
                         <PlusIcon className='h-6 w-6'/>
-                        <Link to="/new">New proposal</Link>
+                        <Link to="/new">Proposal</Link>
                         &nbsp;&nbsp;&nbsp;&nbsp;
-                        <LockClosedIcon className='h-6 w-6 ml-5'/>
-                        <Link to="/lock">Locking</Link>
+                        <LockClosedIcon className='h-6 w-6'/>
+                        <Link to="/lock">Lock</Link>
+                        &nbsp;&nbsp;&nbsp;&nbsp;
+                        <UserAddIcon className='h-6 w-6 mr-1'/>
+                        <Link to="/delegate">Delegate</Link>
                     </div>
                     <div className='col-span-2'>
                         <button 
                         type="button"
-                        className="inline-flex items-center rounded-full border border-transparent bg-black px-6 py-2 text-xl font-medium text-white shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        className="inline-flex items-center rounded-full border border-transparent bg-black px-6 py-2 text-xl font-medium text-white shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
                         onClick={(e)=>{e.preventDefault();handleConnectWallet()}}
                         >
-                        {connected ? "Connected" : "Connect Wallet"}
+                        {connected ? "Disconnect" : "Connect"}
                         </button>
                     </div>
                 </div>
