@@ -106,7 +106,7 @@ actor class VODAO() = this {
                 return #CommonDaoError(#GenericError {message = "Voter has did not create a neuron"});
             };
             case(?neuron){
-                    votingPower := await getNeuronVotingPower(neuron);
+                    votingPower := await getNeuronTotalVotingPower(neuron);
                 }
         };
         let finalVotingPower = await normalizeVotingPower(votingPower);
@@ -288,7 +288,22 @@ actor class VODAO() = this {
         return true;
     };
 
-    public func getNeuronVotingPower(neuron : Types.Neuron) : async Float {
+    // the voting power of a neuron is equal to its voting power alone + the voting power of all the neurons it is followed by
+    public func getNeuronTotalVotingPower(neuron : Types.Neuron) : async Float {
+        // get the voting power of the neuron alone
+        var finalTotalVotingPower = await getSingleNeuronVotingPower(neuron);
+        // get the voting power of the delegates
+        let followers = await getAllFollowersAndSubFollowers( List.nil<Types.Neuron>(), neuron.owner);
+        let followersIter = List.toIter(followers);
+        for (follower in followersIter) {
+            let followerVotingPower = await getSingleNeuronVotingPower(follower);
+            finalTotalVotingPower := finalTotalVotingPower + followerVotingPower;
+        };
+        return finalTotalVotingPower;
+    };
+
+    // get the voting power of a neuron alone
+    public func getSingleNeuronVotingPower(neuron : Types.Neuron) : async Float {
         let canisterPrincipal = await idQuick();
         let depositAccount = {owner = canisterPrincipal; subaccount = ?neuron.depositSubaccount};
         let balance = await _getBalance(depositAccount);
@@ -313,7 +328,7 @@ actor class VODAO() = this {
         return 0;
     };
 
-    // Following system functions
+    // Neuron Following system functions (à la NNS)
     // The follow graph is an acyclic directed graph. Each neuron has two properties, isFollowing
     // the neuron it is currently following and isFollowedBy a list of neurons that are following it.
     // The voting power of a neuron is equal to the sum of the voting power of the neuron it is followed by. 
