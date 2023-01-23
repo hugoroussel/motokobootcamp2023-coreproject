@@ -1,7 +1,6 @@
 import React, {Fragment, useEffect, useState} from "react"
 import { createClient } from "@connect2ic/core"
 import { defaultProviders } from "@connect2ic/core/providers"
-import { Connect2ICProvider, useWallet} from "@connect2ic/react"
 import "@connect2ic/core/style.css"
 import * as dao from "../.dfx/local/canisters/dao"
 import * as mbt from "../.dfx/local/canisters/mbt"
@@ -364,7 +363,5 @@ const client = createClient({
 
 
 export default () => (
-  <Connect2ICProvider client={client}>
     <Locking />
-  </Connect2ICProvider>
 )

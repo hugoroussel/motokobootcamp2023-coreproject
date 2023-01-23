@@ -4,48 +4,32 @@ import {Link} from "react-router-dom"
 import {PlusIcon, HomeIcon, LockClosedIcon, UserAddIcon} from '@heroicons/react/solid'
 import { Principal } from '@dfinity/principal';
 import { getWhitelist } from '../utils';
+import PlugConnect from '@psychedelic/plug-connect';
 
 const Navbar = () => {
 
-   let [connected, setConnected] = useState(false);
-
    async function handleConnectWallet(){
-    if(connected){
-        setConnected(false);
-        localStorage.setItem("principal", "");
-        return;
-    } else {
-        let principal = window.ic.plug.sessionManager.sessionData.principalId
-        console.log("principal", principal);
-        localStorage.setItem("principal", principal);
-    }
-    console.log(getWhitelist());
-    let whitelist = getWhitelist();
-    try {
-        const publicKey = await window.ic.plug.requestConnect({
-          host : "https://mainnet.dfinity.network",
-          whitelist,
-          timeout: 50000
-        });
-        setConnected(true);
-    } catch (e) {
-        console.log(e);
-    }
+    const result = await window.ic.plug.isConnected();
+    console.log("result", result)
+    let principal = await window.ic.plug.agent.getPrincipal()
+    console.log("principal", principal);
+    let principalClean = new Principal(principal._arr);
+    console.log("principalClean", principalClean.toString());
+    localStorage.setItem("principal", principalClean);
+    window.location.reload();
    }
 
    useEffect(() => {
-    async function checkPlugIsConnected() {
-        const result = await window.ic.plug.isConnected();
-        if(result){
-            let principal = window.ic.plug.sessionManager.sessionData.principalId
-            console.log("principal", principal);
-            localStorage.setItem("principal", principal);
-            setConnected(true);
-        } else {
-            setConnected(false);
+    async function checkConnection(){
+        let whitelist = getWhitelist();
+        console.log("whitelist", whitelist)
+        const connected = await window.ic.plug.isConnected();
+        // if (!connected) {window.ic.plug.requestConnect({ whitelist});}
+        if (connected && !window.ic.plug.agent) {
+          window.ic.plug.createAgent({ whitelist })
         }
     }
-    checkPlugIsConnected();
+    checkConnection();
    }, []);
 
 
@@ -58,7 +42,7 @@ const Navbar = () => {
                         <HomeIcon className='h-6 w-6'/>
                         <Link to="/">Home</Link>
                     </div>
-                    <div className='col-span-7 mt-3 text-md font-bold flex ml-80'>
+                    <div className='col-span-7 mt-5 text-md font-bold flex ml-80'>
                         &nbsp;&nbsp;&nbsp;&nbsp;
                         <PlusIcon className='h-6 w-6'/>
                         <Link to="/new">Proposal</Link>
@@ -70,13 +54,13 @@ const Navbar = () => {
                         <Link to="/delegate">Delegate</Link>
                     </div>
                     <div className='col-span-2'>
-                        <button 
-                        type="button"
-                        className="inline-flex items-center rounded-full border border-transparent bg-black px-6 py-2 text-xl font-medium text-white shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
-                        onClick={(e)=>{e.preventDefault();handleConnectWallet()}}
-                        >
-                        {connected ? "Disconnect" : "Connect"}
-                        </button>
+                        <PlugConnect
+                            dark
+                            whitelist={["7mmib-yqaaa-aaaap-qa5la-cai","db3eq-6iaaa-aaaah-abz6a-cai","7fpd5-oyaaa-aaaap-qa5kq-cai"]}
+                            title="Connect to [ˈVƆDAO]"
+                            onConnectCallback={() => {handleConnectWallet()}}
+                            className="mb-10"
+                        />
                     </div>
                 </div>
           </div>

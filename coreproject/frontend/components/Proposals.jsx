@@ -1,15 +1,16 @@
 import { useCanister } from "@connect2ic/react"
 import React, { Fragment, useEffect, useState } from "react"
 import { ArrowDownIcon, ArrowUpIcon, XCircleIcon, CubeTransparentIcon} from '@heroicons/react/solid'
-import * as dao from "../../.dfx/local/canisters/dao"
+import * as dao from "../../.dfx/ic/canisters/dao"
 import { Transition } from '@headlessui/react'
 import LoadingGif from '../loading.gif'
+
 
 const Proposals = () => {
   /*
   * This how you use canisters throughout your app.
   */
-  // const [daoC] = useCanister("dao")
+  // const [dao] = useCanister("dao")
   const [daoProposals, setDaoProposals] = useState([])
   const [show, setShow] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -251,4 +252,6 @@ const Proposals = () => {
   )
 }
 
-export { Proposals }
+export default () => (
+    <Proposals />
+)
