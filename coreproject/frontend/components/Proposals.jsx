@@ -171,7 +171,7 @@ const Proposals = () => {
                   <div>ID : {Number(item.id)}</div>
                 </div>
                 <div className="col-span-4">
-                  <div className="font-bold">{item.proposalText.substring(0,40)}</div>
+                  <div className="font-bold">{item.proposalText.substring(0,50)}</div>
                   <div>Votes : {Number(item.numberOfVotes)}</div>
                   <div>Status : {Object.keys(item.status)[0]}</div>   
                 </div>
@@ -195,7 +195,7 @@ const Proposals = () => {
                   <div>ID : {Number(item.id)}</div>
                 </div>
                 <div className="col-span-4">
-                  <div className="font-bold">{item.proposalText.substring(0,35)}</div>
+                  <div className="font-bold">{item.proposalText.substring(0,50)}</div>
                   <div>Votes : {Number(item.numberOfVotes)}</div>
                   <div>Time : {(new Date(Number(item.time/BigInt(1000000000))*1000)).toString().substring(3,24)}</div>
                 </div>

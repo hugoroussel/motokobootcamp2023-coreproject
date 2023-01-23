@@ -29,7 +29,5 @@ function App() {
 }
 
 export default () => (
-  <Connect2ICProvider client={client}>
     <App />
-  </Connect2ICProvider>
 )
